@@ -361,7 +361,7 @@ const RightSidebar = () => {
         <div className="rounded-xl bg-card border border-border p-4">
           <div className="flex items-center gap-2 mb-3">
             <ArrowRightLeft className="h-4 w-4 text-primary" />
-            <h3 className="font-bold text-sm text-foreground">QUICK SWAP</h3>
+            <h3 className="font-bold text-sm text-foreground">QUICK SWAP in repair</h3>
           </div>
 
           <div className="flex gap-1 mb-3 bg-muted/30 rounded-lg p-1">
