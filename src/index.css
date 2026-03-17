@@ -1,0 +1,129 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 0 0% 9%;
+    --card: 0 0% 96%;
+    --card-foreground: 0 0% 9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 9%;
+    --primary: 150 100% 50%;
+    --primary-foreground: 0 0% 0%;
+    --secondary: 150 100% 40%;
+    --secondary-foreground: 0 0% 0%;
+    --muted: 0 0% 90%;
+    --muted-foreground: 0 0% 53%;
+    --accent: 150 100% 50%;
+    --accent-foreground: 0 0% 0%;
+    --destructive: 344 100% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --success: 150 100% 50%;
+    --success-foreground: 0 0% 0%;
+    --warning: 43 100% 50%;
+    --warning-foreground: 0 0% 0%;
+    --info: 195 100% 50%;
+    --info-foreground: 0 0% 0%;
+    --border: 0 0% 85%;
+    --input: 0 0% 85%;
+    --ring: 150 100% 50%;
+    --radius: 0.75rem;
+    --surface: 0 0% 96%;
+
+    --shadow-card: 0 4px 6px rgba(0,0,0,0.1);
+    --shadow-modal: 0 20px 40px rgba(0,0,0,0.2);
+    --shadow-glow: 0 0 20px rgba(0, 255, 136, 0.15);
+  }
+
+  .dark {
+    --background: 0 0% 0%;
+    --foreground: 0 0% 100%;
+    --card: 0 0% 7%;
+    --card-foreground: 0 0% 100%;
+    --popover: 0 0% 7%;
+    --popover-foreground: 0 0% 100%;
+    --primary: 150 100% 50%;
+    --primary-foreground: 0 0% 0%;
+    --secondary: 150 100% 40%;
+    --secondary-foreground: 0 0% 0%;
+    --muted: 0 0% 10%;
+    --muted-foreground: 0 0% 53%;
+    --accent: 150 100% 50%;
+    --accent-foreground: 0 0% 0%;
+    --destructive: 344 100% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --success: 150 100% 50%;
+    --success-foreground: 0 0% 0%;
+    --warning: 43 100% 50%;
+    --warning-foreground: 0 0% 0%;
+    --info: 195 100% 50%;
+    --info-foreground: 0 0% 0%;
+    --border: 0 0% 10%;
+    --input: 0 0% 10%;
+    --ring: 150 100% 50%;
+    --surface: 0 0% 4%;
+
+    --shadow-card: 0 4px 6px rgba(0,0,0,0.5);
+    --shadow-modal: 0 20px 40px rgba(0,0,0,0.5);
+    --shadow-glow: 0 0 20px rgba(0, 255, 136, 0.3);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html {
+    font-family: 'Inter', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-bold tracking-tight;
+  }
+}
+
+@layer utilities {
+  .glass {
+    @apply bg-card/80 backdrop-blur-xl border border-border;
+  }
+  .glow-primary {
+    box-shadow: var(--shadow-glow);
+  }
+  .shadow-card {
+    box-shadow: var(--shadow-card);
+  }
+  .shadow-modal {
+    box-shadow: var(--shadow-modal);
+  }
+  .text-gradient {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-primary to-secondary;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-primary hover:bg-secondary text-primary-foreground font-semibold
+           px-6 py-3 rounded-lg transition-all duration-200
+           hover:shadow-[0_0_30px_rgba(0,255,136,0.4)] active:scale-95;
+  }
+  .btn-secondary {
+    @apply bg-card border border-border
+           hover:border-primary text-foreground font-medium
+           px-6 py-3 rounded-lg transition-all duration-200;
+  }
+  .card-hover {
+    @apply hover:border-primary/50 transition-all duration-200;
+  }
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+}

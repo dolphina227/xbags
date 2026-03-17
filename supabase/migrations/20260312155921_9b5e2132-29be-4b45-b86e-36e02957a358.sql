@@ -1,0 +1,2 @@
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS location text DEFAULT NULL;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS website text DEFAULT NULL;
