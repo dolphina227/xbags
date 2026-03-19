@@ -227,29 +227,6 @@ export default function TokenDetail({ token, onBack }: TokenDetailProps) {
             />
           </div>
 
-          {/* Bubblemaps — tab terpisah karena tidak ada di DexScreener */}
-          <div className="mt-4 bg-card border border-border rounded-xl overflow-hidden">
-            <div className="flex items-center justify-between px-4 py-2.5 border-b border-border">
-              <span className="text-sm font-semibold text-foreground">Bubblemaps</span>
-              <a
-                href={`https://app.bubblemaps.io/sol/token/${token.tokenAddress}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
-              >
-                <ExternalLink className="h-3 w-3" /> Open full
-              </a>
-            </div>
-            <div style={{ height: "500px" }}>
-              <iframe
-                src={`https://app.bubblemaps.io/sol/token/${token.tokenAddress}`}
-                title="Bubblemaps"
-                className="w-full h-full border-0"
-                loading="lazy"
-              />
-            </div>
-          </div>
-
           {/* Links row */}
           <div className="flex gap-2 mt-4 flex-wrap">
             <a href={`https://dexscreener.com/solana/${token.tokenAddress}`} target="_blank" rel="noopener noreferrer"
