@@ -113,10 +113,43 @@ export default function TokenDetail({ token, onBack }: TokenDetailProps) {
   const buyPresets = settingsBuyAmounts.map(Number);
   const sellPresets = settingsSellPercents.map(Number);
 
-  const { address: walletAddress, network, refreshBalance } = useWallet();
+  const { address: walletAddress, network, refreshBalance, solPrice } = useWallet();
   const { connection } = useConnection();
   const { signTransaction } = useSolanaWallet();
   const loading = ["quoting", "signing", "sending", "confirming"].includes(step);
+
+  // ── Token balance untuk sell ──────────────────────────
+  const [tokenBalance, setTokenBalance] = useState<number | null>(null);
+  const [tokenDecimals, setTokenDecimals] = useState<number>(6);
+
+  useEffect(() => {
+    if (!walletAddress || !token.tokenAddress) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { Connection: Conn, PublicKey: PK } = await import("@solana/web3.js");
+        const conn = new Conn(getRpcUrl(), "confirmed");
+        // Fetch semua token accounts milik wallet
+        const accounts = await conn.getParsedTokenAccountsByOwner(
+          new PK(walletAddress),
+          { mint: new PK(token.tokenAddress) }
+        );
+        if (cancelled) return;
+        if (accounts.value.length > 0) {
+          const info = accounts.value[0].account.data.parsed.info;
+          const decimals = info.tokenAmount.decimals as number;
+          const uiAmount = info.tokenAmount.uiAmount as number;
+          setTokenDecimals(decimals);
+          setTokenBalance(uiAmount);
+        } else {
+          setTokenBalance(0);
+        }
+      } catch {
+        // silent
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [walletAddress, token.tokenAddress]);
 
   const dexScreenerChartUrl = `https://dexscreener.com/solana/${token.tokenAddress}?embed=1&theme=dark&trades=1&info=0`;
 
@@ -131,11 +164,28 @@ export default function TokenDetail({ token, onBack }: TokenDetailProps) {
     setError(null);
     setQuoteData(null);
     try {
-      const amountLamports = Math.floor(parseFloat(solAmount) * 1_000_000_000);
+      let amountRaw: number;
+
+      if (swapMode === "buy") {
+        // Buy: solAmount dalam SOL → kalikan 1_000_000_000 (lamports)
+        amountRaw = Math.floor(parseFloat(solAmount) * 1_000_000_000);
+      } else {
+        // Sell: solAmount berisi persentase (25, 50, 100)
+        // Hitung jumlah token = balance × persen / 100
+        if (tokenBalance === null || tokenBalance <= 0) {
+          throw new Error("No token balance to sell");
+        }
+        const pct = parseFloat(solAmount) / 100;
+        const tokenAmount = tokenBalance * pct;
+        // Konversi ke raw units berdasarkan decimals token
+        amountRaw = Math.floor(tokenAmount * Math.pow(10, tokenDecimals));
+        if (amountRaw <= 0) throw new Error("Invalid sell amount");
+      }
+
       const inputMint = swapMode === "buy" ? SOL_MINT : token.tokenAddress;
       const outputMint = swapMode === "buy" ? token.tokenAddress : SOL_MINT;
       const { data, error: fnError } = await supabase.functions.invoke("bags-trade", {
-        body: { action: "quote", inputMint, outputMint, amount: amountLamports, slippageMode: "manual", slippageBps: Math.floor(parseFloat(slippage) * 100) },
+        body: { action: "quote", inputMint, outputMint, amount: amountRaw, slippageMode: "manual", slippageBps: Math.floor(parseFloat(slippage) * 100) },
       });
       if (fnError) throw new Error(fnError.message);
       if (!data?.success) throw new Error(data?.error || "Quote failed");
@@ -295,7 +345,9 @@ export default function TokenDetail({ token, onBack }: TokenDetailProps) {
             <div>
               <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">Quick Trade</h3>
               <div className="mb-2">
-                <span className="text-[10px] text-muted-foreground uppercase">Buy</span>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[10px] text-muted-foreground uppercase">Buy</span>
+                </div>
                 <div className="flex gap-1.5 mt-1">
                   {buyPresets.map((amt) => (
                     <button key={amt} onClick={() => handleQuickBuy(amt)}
@@ -305,14 +357,24 @@ export default function TokenDetail({ token, onBack }: TokenDetailProps) {
                 </div>
               </div>
               <div>
-                <span className="text-[10px] text-muted-foreground uppercase">Sell</span>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[10px] text-muted-foreground uppercase">Sell</span>
+                  {tokenBalance !== null && tokenBalance > 0 && (
+                    <span className="text-[10px] text-muted-foreground">
+                      {tokenBalance.toLocaleString("en-US", { maximumFractionDigits: 4 })} ${token.symbol}
+                    </span>
+                  )}
+                </div>
                 <div className="flex gap-1.5 mt-1">
                   {sellPresets.map((pct) => (
                     <button key={pct} onClick={() => handleQuickSell(pct)}
                       className="flex-1 py-2 text-xs font-semibold rounded-lg bg-destructive/20 text-destructive border border-destructive/30 hover:bg-destructive/30 transition-colors"
-                      disabled={loading}>{pct}%</button>
+                      disabled={loading || tokenBalance === 0}>{pct}%</button>
                   ))}
                 </div>
+                {tokenBalance === 0 && walletAddress && (
+                  <p className="text-[10px] text-muted-foreground mt-1">No {token.symbol} to sell</p>
+                )}
               </div>
               <div className="flex items-center justify-between mt-2 text-[10px] text-muted-foreground">
                 <span>Slippage {slippage}%  Fee {priorityFee} SOL</span>
@@ -339,10 +401,116 @@ export default function TokenDetail({ token, onBack }: TokenDetailProps) {
                       className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-colors ${swapMode === "sell" ? "bg-destructive text-destructive-foreground" : "text-muted-foreground"}`}>Sell</button>
                   </div>
                   <div>
-                    <label className="text-[10px] text-muted-foreground uppercase">Amount (SOL)</label>
-                    <Input type="number" value={solAmount}
-                      onChange={(e) => { setSolAmount(e.target.value); setStep("idle"); setQuoteData(null); setError(null); }}
-                      placeholder="0.5" className="bg-background border-border text-sm h-9 mt-1" step="0.1" min="0.01" disabled={loading} />
+                    {swapMode === "sell" ? (
+                      <>
+                        {/* Header: balance + nama token */}
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-[10px] text-muted-foreground">
+                            Sell <span className="text-foreground font-semibold">{tokenBalance !== null ? tokenBalance.toLocaleString("en-US", { maximumFractionDigits: 4 }) : "0"}</span>
+                          </span>
+                          <span className="text-[10px] text-muted-foreground font-medium">${token.symbol}</span>
+                        </div>
+                        {tokenBalance !== null && tokenBalance <= 0 && (
+                          <p className="text-xs text-destructive mb-1">No {token.symbol} balance to sell</p>
+                        )}
+                        {/* Preset % buttons */}
+                        <div className="flex items-center gap-1.5 mb-2">
+                          {[10, 25, 50, 100].map((pct) => (
+                            <button key={pct}
+                              onClick={() => {
+                                setSolAmount(String(pct));
+                                setStep("idle"); setQuoteData(null); setError(null);
+                              }}
+                              disabled={loading || tokenBalance === 0}
+                              className={`flex-1 py-1.5 text-xs font-semibold rounded-lg border transition-colors ${
+                                solAmount === String(pct)
+                                  ? "bg-destructive text-destructive-foreground border-destructive"
+                                  : "bg-muted/40 text-muted-foreground border-border hover:text-foreground hover:border-primary/40"
+                              }`}
+                            >{pct}%</button>
+                          ))}
+                        </div>
+                        {/* Input manual jumlah token */}
+                        <Input
+                          type="number"
+                          value={tokenBalance !== null && solAmount ? (tokenBalance * parseFloat(solAmount || "0") / 100).toFixed(4) : ""}
+                          onChange={(e) => {
+                            // Konversi token amount ke persen
+                            if (tokenBalance && tokenBalance > 0) {
+                              const pct = (parseFloat(e.target.value) / tokenBalance) * 100;
+                              setSolAmount(String(Math.min(100, Math.max(0, pct))));
+                            }
+                            setStep("idle"); setQuoteData(null); setError(null);
+                          }}
+                          placeholder={`Token amount`}
+                          className="bg-background border-border text-sm h-9"
+                          step="0.01" min="0"
+                          disabled={loading || tokenBalance === 0} />
+                        {/* Estimasi SOL diterima */}
+                        {tokenBalance !== null && tokenBalance > 0 && solAmount && parseFloat(solAmount) > 0 && token.priceUsd && parseFloat(token.priceUsd) > 0 && solPrice && solPrice > 0 && (
+                          <div className="flex flex-col gap-0.5 mt-1.5 px-2 py-1.5 rounded-lg bg-muted/20 border border-border/40">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] text-muted-foreground">You sell</span>
+                              <span className="text-xs font-semibold text-destructive">
+                                {(tokenBalance * parseFloat(solAmount) / 100).toLocaleString("en-US", { maximumFractionDigits: 4 })} ${token.symbol}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] text-muted-foreground">Est. receive</span>
+                              <span className="text-xs font-semibold text-green-400">
+                                ≈ {((tokenBalance * parseFloat(solAmount) / 100 * parseFloat(token.priceUsd)) / solPrice).toLocaleString("en-US", { maximumFractionDigits: 6 })} SOL
+                              </span>
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        {/* Header: SOL label */}
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-[10px] text-muted-foreground">Buy Amount</span>
+                          <span className="text-[10px] text-muted-foreground font-medium">SOL</span>
+                        </div>
+                        {/* Preset SOL buttons */}
+                        <div className="flex items-center gap-1.5 mb-2">
+                          {[0.1, 0.5, 1, 2].map((amt) => (
+                            <button key={amt}
+                              onClick={() => { setSolAmount(String(amt)); setStep("idle"); setQuoteData(null); setError(null); }}
+                              disabled={loading}
+                              className={`flex-1 py-1.5 text-xs font-semibold rounded-lg border transition-colors ${
+                                solAmount === String(amt)
+                                  ? "bg-green-500 text-white border-green-500"
+                                  : "bg-muted/40 text-muted-foreground border-border hover:text-foreground hover:border-primary/40"
+                              }`}
+                            >{amt}</button>
+                          ))}
+                        </div>
+                        {/* Input manual SOL — selalu tampil */}
+                        <Input type="number" value={solAmount}
+                          onChange={(e) => { setSolAmount(e.target.value); setStep("idle"); setQuoteData(null); setError(null); }}
+                          placeholder="0.5 SOL"
+                          className="bg-background border-border text-sm h-9"
+                          step="0.1" min="0.01"
+                          disabled={loading} />
+                        {/* You buy + Est. receive — format sama dengan sell */}
+                        {solAmount && parseFloat(solAmount) > 0 && token.priceUsd && parseFloat(token.priceUsd) > 0 && solPrice && solPrice > 0 && (
+                          <div className="flex flex-col gap-0.5 mt-1.5 px-2 py-1.5 rounded-lg bg-muted/20 border border-border/40">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] text-muted-foreground">You buy</span>
+                              <span className="text-xs font-semibold text-green-400">
+                                {parseFloat(solAmount).toLocaleString("en-US", { maximumFractionDigits: 4 })} SOL
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] text-muted-foreground">Est. receive</span>
+                              <span className="text-xs font-semibold text-green-400">
+                                ≈ {((parseFloat(solAmount) * solPrice) / parseFloat(token.priceUsd)).toLocaleString("en-US", { maximumFractionDigits: 4 })} ${token.symbol}
+                              </span>
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    )}
                   </div>
                   <div className="flex gap-2">
                     <div className="flex-1">
@@ -363,8 +531,14 @@ export default function TokenDetail({ token, onBack }: TokenDetailProps) {
                     </div>
                   </div>
                   {quoteData && step === "quoted" && (
-                    <div className="text-xs text-green-400 font-medium text-center py-1">
-                      ≈ {(parseInt(quoteData.outAmount) / 1_000_000_000).toLocaleString("en-US", { maximumFractionDigits: 4 })} {swapMode === "buy" ? token.symbol : "SOL"}
+                    <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-muted/30 border border-border">
+                      <span className="text-[10px] text-muted-foreground uppercase">You receive</span>
+                      <span className="text-sm font-bold text-green-400">
+                        ≈ {swapMode === "buy"
+                          ? (parseInt(quoteData.outAmount) / Math.pow(10, tokenDecimals)).toLocaleString("en-US", { maximumFractionDigits: 4 })
+                          : (parseInt(quoteData.outAmount) / 1_000_000_000).toLocaleString("en-US", { maximumFractionDigits: 6 })
+                        } {swapMode === "buy" ? token.symbol : "SOL"}
+                      </span>
                     </div>
                   )}
                   {error && <div className="text-xs text-destructive text-center">{error}</div>}
