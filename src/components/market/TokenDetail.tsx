@@ -330,6 +330,12 @@ export default function TokenDetail({ token, onBack }: TokenDetailProps) {
 
             {/* Timeframe changes */}
             <div className="flex gap-3 text-xs text-muted-foreground">
+              {token.priceChange?.m5 != null && (
+                <span>5m <span className={token.priceChange.m5 >= 0 ? "text-green-400" : "text-destructive"}>{token.priceChange.m5 >= 0 ? "+" : ""}{token.priceChange.m5.toFixed(1)}%</span></span>
+              )}
+              {token.priceChange?.h1 != null && (
+                <span>1h <span className={token.priceChange.h1 >= 0 ? "text-green-400" : "text-destructive"}>{token.priceChange.h1 >= 0 ? "+" : ""}{token.priceChange.h1.toFixed(1)}%</span></span>
+              )}
               {priceChange6h != null && (
                 <span>6h <span className={priceChange6h >= 0 ? "text-green-400" : "text-destructive"}>{priceChange6h >= 0 ? "+" : ""}{priceChange6h.toFixed(1)}%</span></span>
               )}
@@ -338,48 +344,68 @@ export default function TokenDetail({ token, onBack }: TokenDetailProps) {
               )}
             </div>
 
-            {/* ═══ QUICK TRADE ═══ */}
-            <div>
-              <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">Quick Trade</h3>
-              <div className="mb-2">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-[10px] text-muted-foreground uppercase">Buy</span>
-                </div>
-                <div className="flex gap-1.5 mt-1">
-                  {buyPresets.map((amt) => (
-                    <button key={amt} onClick={() => handleQuickBuy(amt)}
-                      className="flex-1 py-2 text-xs font-semibold rounded-lg bg-green-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/30 transition-colors"
-                      disabled={loading}>{amt} SOL</button>
-                  ))}
-                </div>
-              </div>
+            {/* CA + Social Links — tepat di bawah logo */}
+            <div className="border-t border-border pt-3 space-y-3">
+              {/* Contract Address */}
               <div>
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-[10px] text-muted-foreground uppercase">Sell</span>
-                  {tokenBalance !== null && tokenBalance > 0 && (
-                    <span className="text-[10px] text-muted-foreground">
-                      {tokenBalance.toLocaleString("en-US", { maximumFractionDigits: 4 })} ${token.symbol}
-                    </span>
-                  )}
-                </div>
-                <div className="flex gap-1.5 mt-1">
-                  {sellPresets.map((pct) => (
-                    <button key={pct} onClick={() => handleQuickSell(pct)}
-                      className="flex-1 py-2 text-xs font-semibold rounded-lg bg-destructive/20 text-destructive border border-destructive/30 hover:bg-destructive/30 transition-colors"
-                      disabled={loading || tokenBalance === 0}>{pct}%</button>
-                  ))}
-                </div>
-                {tokenBalance === 0 && walletAddress && (
-                  <p className="text-[10px] text-muted-foreground mt-1">No {token.symbol} to sell</p>
-                )}
-              </div>
-              <div className="flex items-center justify-between mt-2 text-[10px] text-muted-foreground">
-                <span>Slippage {slippage}%  Fee {priorityFee} SOL</span>
-                <button onClick={() => setShowSettings(!showSettings)} className="text-muted-foreground hover:text-foreground">
-                  <Settings className="h-3.5 w-3.5" />
+                <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1.5">Contract Address</p>
+                <button
+                  onClick={handleCopyAddress}
+                  className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-muted/40 border border-border hover:border-primary/40 transition-colors group"
+                >
+                  <span className="text-xs font-mono text-foreground truncate">
+                    {token.tokenAddress.slice(0, 8)}...{token.tokenAddress.slice(-8)}
+                  </span>
+                  {copied
+                    ? <Check className="h-3.5 w-3.5 text-green-400 shrink-0" />
+                    : <Copy className="h-3.5 w-3.5 text-muted-foreground group-hover:text-primary shrink-0 transition-colors" />}
                 </button>
               </div>
-              {!walletAddress && <p className="text-xs text-destructive mt-1">No tokens to sell</p>}
+
+              {/* Social & Explorer Links */}
+              <div>
+                <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1.5">Links</p>
+                <div className="grid grid-cols-3 gap-1.5">
+                  <a href={`https://solscan.io/token/${token.tokenAddress}`} target="_blank" rel="noopener noreferrer"
+                    className="flex flex-col items-center gap-1 py-2 rounded-lg bg-muted/30 border border-border hover:border-primary/40 hover:text-foreground text-muted-foreground transition-colors text-[10px]">
+                    <ExternalLink className="h-3.5 w-3.5" />
+                    Solscan
+                  </a>
+                  {pairData.websites.map((w, i) => (
+                    <a key={`web-${i}`} href={w.url} target="_blank" rel="noopener noreferrer"
+                      className="flex flex-col items-center gap-1 py-2 rounded-lg bg-muted/30 border border-border hover:border-primary/40 hover:text-foreground text-muted-foreground transition-colors text-[10px]">
+                      <Globe className="h-3.5 w-3.5" />
+                      Website
+                    </a>
+                  ))}
+                  {pairData.socials.map((s, i) => {
+                    const isX = s.type === "twitter" || s.url?.includes("twitter.com") || s.url?.includes("x.com");
+                    const isTg = s.type === "telegram" || s.url?.includes("t.me");
+                    return (
+                      <a key={`soc-${i}`} href={s.url} target="_blank" rel="noopener noreferrer"
+                        className="flex flex-col items-center gap-1 py-2 rounded-lg bg-muted/30 border border-border hover:border-primary/40 hover:text-foreground text-muted-foreground transition-colors text-[10px]">
+                        {isX ? (
+                          <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+                          </svg>
+                        ) : isTg ? (
+                          <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z" />
+                          </svg>
+                        ) : (
+                          <ExternalLink className="h-3.5 w-3.5" />
+                        )}
+                        {isX ? "Twitter" : isTg ? "Telegram" : "Social"}
+                      </a>
+                    );
+                  })}
+                  <a href={`https://bags.fm/token/${token.tokenAddress}`} target="_blank" rel="noopener noreferrer"
+                    className="flex flex-col items-center gap-1 py-2 rounded-lg bg-muted/30 border border-border hover:border-primary/40 hover:text-foreground text-muted-foreground transition-colors text-[10px]">
+                    <ExternalLink className="h-3.5 w-3.5" />
+                    Bags.fm
+                  </a>
+                </div>
+              </div>
             </div>
 
             {/* ═══ CUSTOM TRADE ═══ */}
@@ -597,74 +623,6 @@ export default function TokenDetail({ token, onBack }: TokenDetailProps) {
               </div>
             )}
 
-            {/* CA + Social Links */}
-            <div className="border-t border-border pt-3 space-y-3">
-              {/* Contract Address */}
-              <div>
-                <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1.5">Contract Address</p>
-                <button
-                  onClick={handleCopyAddress}
-                  className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-muted/40 border border-border hover:border-primary/40 transition-colors group"
-                >
-                  <span className="text-xs font-mono text-foreground truncate">
-                    {token.tokenAddress.slice(0, 8)}...{token.tokenAddress.slice(-8)}
-                  </span>
-                  {copied
-                    ? <Check className="h-3.5 w-3.5 text-green-400 shrink-0" />
-                    : <Copy className="h-3.5 w-3.5 text-muted-foreground group-hover:text-primary shrink-0 transition-colors" />}
-                </button>
-              </div>
-
-              {/* Social & Explorer Links */}
-              <div>
-                <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1.5">Links</p>
-                <div className="grid grid-cols-3 gap-1.5">
-                  {/* Explorer links — selalu tampil */}
-                  <a href={`https://solscan.io/token/${token.tokenAddress}`} target="_blank" rel="noopener noreferrer"
-                    className="flex flex-col items-center gap-1 py-2 rounded-lg bg-muted/30 border border-border hover:border-primary/40 hover:text-foreground text-muted-foreground transition-colors text-[10px]">
-                    <ExternalLink className="h-3.5 w-3.5" />
-                    Solscan
-                  </a>
-
-                  {/* Social links dari DexScreener — hanya tampil jika ada datanya */}
-                  {pairData.websites.map((w, i) => (
-                    <a key={`web-${i}`} href={w.url} target="_blank" rel="noopener noreferrer"
-                      className="flex flex-col items-center gap-1 py-2 rounded-lg bg-muted/30 border border-border hover:border-primary/40 hover:text-foreground text-muted-foreground transition-colors text-[10px]">
-                      <Globe className="h-3.5 w-3.5" />
-                      Website
-                    </a>
-                  ))}
-                  {pairData.socials.map((s, i) => {
-                    const isX = s.type === "twitter" || s.url?.includes("twitter.com") || s.url?.includes("x.com");
-                    const isTg = s.type === "telegram" || s.url?.includes("t.me");
-                    return (
-                      <a key={`soc-${i}`} href={s.url} target="_blank" rel="noopener noreferrer"
-                        className="flex flex-col items-center gap-1 py-2 rounded-lg bg-muted/30 border border-border hover:border-primary/40 hover:text-foreground text-muted-foreground transition-colors text-[10px]">
-                        {isX ? (
-                          <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
-                          </svg>
-                        ) : isTg ? (
-                          <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z" />
-                          </svg>
-                        ) : (
-                          <ExternalLink className="h-3.5 w-3.5" />
-                        )}
-                        {isX ? "Twitter" : isTg ? "Telegram" : "Social"}
-                      </a>
-                    );
-                  })}
-
-                  {/* Bags.fm */}
-                  <a href={`https://bags.fm/token/${token.tokenAddress}`} target="_blank" rel="noopener noreferrer"
-                    className="flex flex-col items-center gap-1 py-2 rounded-lg bg-muted/30 border border-border hover:border-primary/40 hover:text-foreground text-muted-foreground transition-colors text-[10px]">
-                    <ExternalLink className="h-3.5 w-3.5" />
-                    Bags.fm
-                  </a>
-                </div>
-              </div>
-            </div>
           </div>
         </div>
       </div>
