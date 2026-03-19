@@ -122,33 +122,29 @@ export default function TokenDetail({ token, onBack }: TokenDetailProps) {
   const [tokenBalance, setTokenBalance] = useState<number | null>(null);
   const [tokenDecimals, setTokenDecimals] = useState<number>(6);
 
-  useEffect(() => {
+  const refreshTokenBalance = async () => {
     if (!walletAddress || !token.tokenAddress) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const { Connection: Conn, PublicKey: PK } = await import("@solana/web3.js");
-        const conn = new Conn(getRpcUrl(), "confirmed");
-        // Fetch semua token accounts milik wallet
-        const accounts = await conn.getParsedTokenAccountsByOwner(
-          new PK(walletAddress),
-          { mint: new PK(token.tokenAddress) }
-        );
-        if (cancelled) return;
-        if (accounts.value.length > 0) {
-          const info = accounts.value[0].account.data.parsed.info;
-          const decimals = info.tokenAmount.decimals as number;
-          const uiAmount = info.tokenAmount.uiAmount as number;
-          setTokenDecimals(decimals);
-          setTokenBalance(uiAmount);
-        } else {
-          setTokenBalance(0);
-        }
-      } catch {
-        // silent
+    try {
+      const { Connection: Conn, PublicKey: PK } = await import("@solana/web3.js");
+      const conn = new Conn(getRpcUrl(), "confirmed");
+      const accounts = await conn.getParsedTokenAccountsByOwner(
+        new PK(walletAddress),
+        { mint: new PK(token.tokenAddress) }
+      );
+      if (accounts.value.length > 0) {
+        const info = accounts.value[0].account.data.parsed.info;
+        setTokenDecimals(info.tokenAmount.decimals as number);
+        setTokenBalance(info.tokenAmount.uiAmount as number);
+      } else {
+        setTokenBalance(0);
       }
-    })();
-    return () => { cancelled = true; };
+    } catch {
+      // silent
+    }
+  };
+
+  useEffect(() => {
+    refreshTokenBalance();
   }, [walletAddress, token.tokenAddress]);
 
   const dexScreenerChartUrl = `https://dexscreener.com/solana/${token.tokenAddress}?embed=1&theme=dark&trades=1&info=0`;
@@ -223,6 +219,7 @@ export default function TokenDetail({ token, onBack }: TokenDetailProps) {
       setStep("done");
       toast({ title: "Swap successful! 🎉" });
       setTimeout(refreshBalance, 2000);
+      setTimeout(refreshTokenBalance, 3000); // refresh token balance setelah swap
     } catch (err: any) {
       const parsed = parseRpcError(err);
       setError(parsed.message);
