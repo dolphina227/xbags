@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { MapPin, Link as LinkIcon, Calendar, Edit, Camera, Loader2, UserPlus, UserMinus, MessageCircle } from "lucide-react";
+import { MapPin, Link as LinkIcon, Calendar, Edit, Camera, Loader2, UserPlus, UserMinus, MessageCircle, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
@@ -30,10 +30,12 @@ const ProfilePage = () => {
   const [likedPosts, setLikedPosts] = useState<Post[]>([]);
   const [replies, setReplies] = useState<any[]>([]);
   const [mediaPosts, setMediaPosts] = useState<Post[]>([]);
+  const [scheduledPosts, setScheduledPosts] = useState<Post[]>([]);
   const [postsLoading, setPostsLoading] = useState(false);
   const [likesLoading, setLikesLoading] = useState(false);
   const [repliesLoading, setRepliesLoading] = useState(false);
   const [mediaLoading, setMediaLoading] = useState(false);
+  const [scheduledLoading, setScheduledLoading] = useState(false);
   const [postsCount, setPostsCount] = useState(0);
   const [activeTab, setActiveTab] = useState("posts");
   const [bannerUploading, setBannerUploading] = useState(false);
@@ -113,16 +115,25 @@ const ProfilePage = () => {
     feedAPI.getUserMediaPosts(viewProfile.id).then(setMediaPosts).catch(() => {}).finally(() => setMediaLoading(false));
   }, [activeTab, viewProfile?.id]);
 
+  // Load scheduled posts when tab is active (only own profile)
+  useEffect(() => {
+    if (activeTab !== "scheduled" || !viewProfile?.id || !isOwnProfile) return;
+    setScheduledLoading(true);
+    feedAPI.getUserScheduledPosts(viewProfile.id).then(setScheduledPosts).catch(() => {}).finally(() => setScheduledLoading(false));
+  }, [activeTab, viewProfile?.id, isOwnProfile]);
+
   const handlePostUpdate = useCallback((postId: string, updates: Partial<Post>) => {
     setPosts(prev => prev.map(p => p.id === postId ? { ...p, ...updates } : p));
     setLikedPosts(prev => prev.map(p => p.id === postId ? { ...p, ...updates } : p));
     setMediaPosts(prev => prev.map(p => p.id === postId ? { ...p, ...updates } : p));
+    setScheduledPosts(prev => prev.map(p => p.id === postId ? { ...p, ...updates } : p));
   }, []);
 
   const handlePostDelete = useCallback((postId: string) => {
     setPosts(prev => prev.filter(p => p.id !== postId));
     setLikedPosts(prev => prev.filter(p => p.id !== postId));
     setMediaPosts(prev => prev.filter(p => p.id !== postId));
+    setScheduledPosts(prev => prev.filter(p => p.id !== postId));
     setPostsCount(c => c - 1);
   }, []);
 
@@ -282,11 +293,16 @@ const ProfilePage = () => {
       {/* Posts Section with Tabs */}
       <div className="mt-8">
         <Tabs defaultValue="posts" className="w-full" onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-4 bg-card border border-border">
+          <TabsList className={`grid w-full bg-card border border-border ${isOwnProfile ? "grid-cols-5" : "grid-cols-4"}`}>
             <TabsTrigger value="posts" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground text-muted-foreground">Posts</TabsTrigger>
             <TabsTrigger value="likes" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground text-muted-foreground">Likes</TabsTrigger>
             <TabsTrigger value="replies" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground text-muted-foreground">Replies</TabsTrigger>
             <TabsTrigger value="media" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground text-muted-foreground">Media</TabsTrigger>
+            {isOwnProfile && (
+              <TabsTrigger value="scheduled" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground text-muted-foreground flex items-center gap-1">
+                <Clock className="h-3.5 w-3.5" />Sched
+              </TabsTrigger>
+            )}
           </TabsList>
 
           {/* Posts Tab */}
@@ -379,6 +395,34 @@ const ProfilePage = () => {
               <div className="text-center py-12 text-muted-foreground text-sm">No media yet</div>
             )}
           </TabsContent>
+
+          {/* Scheduled Tab — hanya tampil untuk profil sendiri */}
+          {isOwnProfile && (
+            <TabsContent value="scheduled" className="mt-4 space-y-0">
+              {scheduledLoading ? (
+                [1, 2, 3].map((_, i) => <PostSkeleton key={i} />)
+              ) : scheduledPosts.length > 0 ? (
+                scheduledPosts.map((post, i) => (
+                  <div key={post.id}>
+                    <div className="flex items-center gap-1.5 px-4 pt-3 pb-1">
+                      <div className="flex items-center gap-1 bg-primary/10 text-primary border border-primary/20 rounded-full px-2 py-0.5 text-[10px] font-semibold">
+                        <Clock className="h-3 w-3" />
+                        {post.scheduled_at
+                          ? new Date(post.scheduled_at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
+                          : "Scheduled"}
+                      </div>
+                    </div>
+                    <PostCard post={post} onUpdate={handlePostUpdate} onDelete={handlePostDelete} index={i} />
+                  </div>
+                ))
+              ) : (
+                <div className="text-center py-12 text-muted-foreground text-sm">
+                  <Clock className="h-8 w-8 mx-auto mb-2 opacity-40" />
+                  No scheduled posts
+                </div>
+              )}
+            </TabsContent>
+          )}
         </Tabs>
       </div>
     </div>

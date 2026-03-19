@@ -16,11 +16,13 @@ const AppLayout = () => {
     <div className="dark min-h-screen flex w-full bg-background text-foreground">
       <AppSidebar />
       <div className="flex-1 flex flex-col min-h-screen min-w-0">
-        <div className="md:hidden">
+        {/* Header fixed di mobile agar tidak ikut scroll */}
+        <div className="md:hidden fixed top-0 left-0 right-0 z-50">
           <Header />
         </div>
         <div className="flex-1 flex min-w-0">
-          <main className={`flex-1 min-w-0 pb-20 md:pb-0 w-full ${isMarketPage ? "px-4" : "mx-auto max-w-[640px] px-4"}`}>
+          {/* pt-14 untuk kompensasi tinggi header fixed di mobile */}
+          <main className={`flex-1 min-w-0 pb-20 md:pb-0 w-full pt-14 md:pt-0 ${isMarketPage ? "px-4" : "mx-auto max-w-[640px] px-4"}`}>
             <Outlet />
           </main>
           {showRightSidebar && <RightSidebar />}

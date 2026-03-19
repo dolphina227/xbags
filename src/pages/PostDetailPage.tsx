@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import PostCard from "@/components/feed/PostCard";
+import CommentSection from "@/components/feed/CommentSection";
 import { feedAPI, Post } from "@/lib/api/feed";
 import { useProfile } from "@/hooks/use-profile";
 
@@ -41,7 +42,17 @@ export default function PostDetailPage() {
           <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
         </div>
       ) : post ? (
-        <PostCard post={post} onUpdate={handleUpdate} onDelete={handleDelete} index={0} />
+        <>
+          <PostCard post={post} onUpdate={handleUpdate} onDelete={handleDelete} index={0} />
+          <div className="px-4 py-2 border-t border-border">
+            <CommentSection
+              postId={post.id}
+              alwaysOpen
+              onCommentAdded={() => handleUpdate(post.id, { comments_count: (post.comments_count ?? 0) + 1 })}
+              onCommentDeleted={() => handleUpdate(post.id, { comments_count: Math.max(0, (post.comments_count ?? 0) - 1) })}
+            />
+          </div>
+        </>
       ) : (
         <div className="flex flex-col items-center justify-center py-20 text-center">
           <p className="text-lg font-semibold text-foreground mb-1">Post not found</p>

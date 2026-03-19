@@ -1,20 +1,17 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Search, UserPlus, ArrowRightLeft, Loader2 } from "lucide-react";
+import { Search, UserPlus, TrendingUp, Hash, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { supabase } from "@/integrations/supabase/client";
-import { useWallet } from "@/hooks/use-wallet";
-import { useConnection } from "@solana/wallet-adapter-react";
-import { useWallet as useSolanaWallet } from "@solana/wallet-adapter-react";
-import { VersionedTransaction, PublicKey } from "@solana/web3.js";
-import bs58 from "bs58";
-import { useToast } from "@/hooks/use-toast";
-import { parseRpcError, getRpcUrl } from "@/lib/solana-utils";
 import { useNavigate } from "react-router-dom";
 
-const SOL_MINT = "So11111111111111111111111111111111111111112";
-const PRESET_AMOUNTS = [0.1, 0.5, 1, 2];
+// ── Global event untuk auto-detect token dari feed ──────────────────────────
+// PostCard/TokenMention memanggil ini saat user klik token
+export function emitTokenSelected(tokenAddress: string, symbol: string | null, name: string, icon: string | null) {
+  window.dispatchEvent(new CustomEvent("xbags:token-selected", {
+    detail: { tokenAddress, symbol, name, icon }
+  }));
+}
 
 interface Profile {
   id: string;
@@ -33,9 +30,22 @@ interface TokenResult {
   marketCap: number | null;
 }
 
+interface TrendingTicker {
+  symbol: string;
+  count: number;
+  priceUsd?: string | null;
+  priceChange?: number | null;
+  icon?: string | null;
+  tokenAddress?: string;
+}
+
+interface TrendingHashtag {
+  tag: string;
+  count: number;
+}
+
 const RightSidebar = () => {
   const navigate = useNavigate();
-  const { toast } = useToast();
 
   // ── Search ─────────────────────────────
   const [searchQuery, setSearchQuery] = useState("");
@@ -50,27 +60,18 @@ const RightSidebar = () => {
       setTokenResults([]);
       return;
     }
-
     setSearching(true);
     const cleanQ = q.trim();
-
     try {
-      // Search users in parallel with token search
       const [userRes, tokenRes] = await Promise.all([
-        // User search
         supabase
           .from("profiles")
           .select("id, username, display_name, avatar_url, created_at")
           .or(`username.ilike.%${cleanQ}%,display_name.ilike.%${cleanQ}%`)
           .limit(5),
-        // Token search via edge function
-        supabase.functions.invoke("search-tokens", {
-          body: { query: cleanQ },
-        }),
+        supabase.functions.invoke("search-tokens", { body: { query: cleanQ } }),
       ]);
-
       setSearchResults(userRes.data || []);
-
       if (tokenRes.data?.success && Array.isArray(tokenRes.data.tokens)) {
         setTokenResults(tokenRes.data.tokens.slice(0, 5));
       } else {
@@ -91,14 +92,13 @@ const RightSidebar = () => {
   }, [searchQuery, handleSearch]);
 
   const handleTokenClick = (token: TokenResult) => {
-    // Navigate to market page with token address as param
     navigate(`/market?token=${token.tokenAddress}`);
     setSearchQuery("");
     setTokenResults([]);
     setSearchResults([]);
   };
 
-  // ── New Users (Who to Follow) ──────────
+  // ── Who to Follow ──────────────────────
   const [newUsers, setNewUsers] = useState<Profile[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(true);
 
@@ -122,83 +122,164 @@ const RightSidebar = () => {
     return () => clearInterval(interval);
   }, []);
 
-  // ── Quick Swap ─────────────────────────
-  const [swapMode, setSwapMode] = useState<"buy" | "sell">("buy");
-  const [tokenMint, setTokenMint] = useState("");
-  const [solAmount, setSolAmount] = useState("0.1");
-  const [swapStep, setSwapStep] = useState<"idle" | "quoting" | "quoted" | "signing" | "sending" | "confirming" | "done" | "error">("idle");
-  const [quoteData, setQuoteData] = useState<any>(null);
-  const [swapError, setSwapError] = useState<string | null>(null);
-  const [estimateText, setEstimateText] = useState("");
+  // ── Trending Tickers dari feed ─────────
+  const [trendingTickers, setTrendingTickers] = useState<TrendingTicker[]>([]);
+  const [loadingTickers, setLoadingTickers] = useState(true);
 
-  const { address: walletAddress, refreshBalance } = useWallet();
-  const { connection } = useConnection();
-  const { signTransaction } = useSolanaWallet();
-  const swapLoading = ["quoting", "signing", "sending", "confirming"].includes(swapStep);
+  useEffect(() => {
+    const fetchTrendingTickers = async () => {
+      try {
+        const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+        const { data } = await supabase
+          .from("posts")
+          .select("content")
+          .eq("is_published", true)
+          .gte("created_at", since)
+          .limit(200);
 
-  const handleGetQuote = async () => {
-    if (!tokenMint.trim() || !solAmount) return;
-    setSwapStep("quoting");
-    setSwapError(null);
-    setQuoteData(null);
-    setEstimateText("");
-    try {
-      const amountLamports = Math.floor(parseFloat(solAmount) * 1_000_000_000);
-      const inputMint = swapMode === "buy" ? SOL_MINT : tokenMint.trim();
-      const outputMint = swapMode === "buy" ? tokenMint.trim() : SOL_MINT;
-      const { data, error } = await supabase.functions.invoke("bags-trade", {
-        body: { action: "quote", inputMint, outputMint, amount: amountLamports, slippageMode: "auto" },
-      });
-      if (error) throw new Error(error.message);
-      if (!data?.success) throw new Error(data?.error || "Quote failed");
-      setQuoteData(data.response);
-      const outAmt = parseInt(data.response.outAmount) / 1_000_000_000;
-      setEstimateText(`≈ ${outAmt >= 1000 ? outAmt.toLocaleString("en-US", { maximumFractionDigits: 2 }) : outAmt.toFixed(4)}`);
-      setSwapStep("quoted");
-    } catch (err: any) {
-      setSwapError(err.message || "Quote failed");
-      setSwapStep("error");
-    }
-  };
+        if (!data) return;
 
-  const handleSwap = async () => {
-    if (!quoteData || !walletAddress || !signTransaction) return;
-    try {
-      const { Connection } = await import("@solana/web3.js");
-      const conn = new Connection(getRpcUrl(), "confirmed");
-      const balance = await conn.getBalance(new PublicKey(walletAddress));
-      if (balance / 1_000_000_000 < parseFloat(solAmount) + 0.003) throw new Error("Insufficient funds");
-      setSwapStep("signing");
-      setSwapError(null);
-      const { data, error } = await supabase.functions.invoke("bags-trade", {
-        body: { action: "swap", quoteResponse: quoteData, userPublicKey: walletAddress },
-      });
-      if (error) throw new Error(error.message);
-      const swapTx = data?.swapTransaction || data?.response?.swapTransaction;
-      if (!swapTx) throw new Error("No swap transaction returned");
-      const txBytes = bs58.decode(swapTx);
-      const transaction = VersionedTransaction.deserialize(txBytes);
-      const signedTx = await signTransaction(transaction);
-      setSwapStep("sending");
-      const rawTx = signedTx.serialize();
-      const signature = await connection.sendRawTransaction(rawTx, { skipPreflight: false, maxRetries: 3 });
-      setSwapStep("confirming");
-      const bh = await connection.getLatestBlockhash();
-      await connection.confirmTransaction({ signature, blockhash: bh.blockhash, lastValidBlockHeight: bh.lastValidBlockHeight }, "confirmed");
-      setSwapStep("done");
-      toast({ title: "Swap successful! 🎉", description: `Swapped ${solAmount} SOL` });
-      setTimeout(refreshBalance, 2000);
-      setTimeout(() => setSwapStep("idle"), 3000);
-    } catch (err: any) {
-      const parsed = parseRpcError(err);
-      setSwapError(parsed.message);
-      setSwapStep("error");
-    }
-  };
+        // Extract semua $TICKER dari content post
+        const tickerMap = new Map<string, number>();
+        data.forEach(({ content }) => {
+          const matches = content.match(/\$([A-Z]{1,10})(?![A-Za-z])/g) || [];
+          matches.forEach(m => {
+            const sym = m.slice(1).toUpperCase();
+            tickerMap.set(sym, (tickerMap.get(sym) || 0) + 1);
+          });
+        });
+
+        // Urutkan berdasarkan jumlah sebutan, ambil top 6
+        const sorted = [...tickerMap.entries()]
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 6);
+
+        if (sorted.length === 0) {
+          setLoadingTickers(false);
+          return;
+        }
+
+        // Fetch harga live untuk tiap ticker
+        const enriched = await Promise.all(
+          sorted.map(async ([symbol, count]) => {
+            try {
+              const { data: res } = await supabase.functions.invoke("search-tokens", {
+                body: { query: symbol },
+              });
+              if (res?.success && res.tokens?.length > 0) {
+                // Pilih token dengan liquidity tertinggi
+                const best = res.tokens
+                  .filter((t: any) => t.symbol?.toUpperCase() === symbol)
+                  .sort((a: any, b: any) => (b.liquidity || 0) - (a.liquidity || 0))[0]
+                  || res.tokens[0];
+                return {
+                  symbol,
+                  count,
+                  priceUsd: best.priceUsd,
+                  priceChange: best.priceChange?.h24,
+                  icon: best.icon,
+                  tokenAddress: best.tokenAddress,
+                };
+              }
+            } catch {}
+            return { symbol, count };
+          })
+        );
+
+        setTrendingTickers(enriched);
+      } catch {
+        // silent
+      } finally {
+        setLoadingTickers(false);
+      }
+    };
+
+    fetchTrendingTickers();
+    const interval = setInterval(fetchTrendingTickers, 5 * 60_000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // ── Trending Hashtags dari feed ────────
+  const [trendingHashtags, setTrendingHashtags] = useState<TrendingHashtag[]>([]);
+  const [loadingHashtags, setLoadingHashtags] = useState(true);
+
+  useEffect(() => {
+    const fetchTrendingHashtags = async () => {
+      try {
+        const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+        const { data } = await supabase
+          .from("posts")
+          .select("content")
+          .eq("is_published", true)
+          .gte("created_at", since)
+          .limit(200);
+
+        if (!data) return;
+
+        const tagMap = new Map<string, number>();
+        data.forEach(({ content }) => {
+          const matches = content.match(/#([a-zA-Z0-9_]{1,30})(?![a-zA-Z0-9_])/g) || [];
+          matches.forEach(m => {
+            const tag = m.slice(1).toLowerCase();
+            tagMap.set(tag, (tagMap.get(tag) || 0) + 1);
+          });
+        });
+
+        const sorted = [...tagMap.entries()]
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 8)
+          .map(([tag, count]) => ({ tag, count }));
+
+        setTrendingHashtags(sorted);
+      } catch {
+        // silent
+      } finally {
+        setLoadingHashtags(false);
+      }
+    };
+
+    fetchTrendingHashtags();
+    const interval = setInterval(fetchTrendingHashtags, 5 * 60_000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // ── Auto-detect token dari feed (untuk fitur masa depan) ──
+  const [detectedToken, setDetectedToken] = useState<{
+    tokenAddress: string;
+    symbol: string | null;
+    name: string;
+    icon: string | null;
+  } | null>(null);
+
+  // Listen event dari feed saat user klik token
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { tokenAddress, symbol, name, icon } = (e as CustomEvent).detail;
+      setDetectedToken({ tokenAddress, symbol, name, icon });
+    };
+    window.addEventListener("xbags:token-selected", handler);
+    return () => window.removeEventListener("xbags:token-selected", handler);
+  }, []);
 
   const getInitials = (p: Profile) => {
     const name = p.display_name || p.username || "?";
     return name.slice(0, 2).toUpperCase();
+  };
+
+  const formatPrice = (p: string | null | undefined) => {
+    if (!p) return "—";
+    const n = parseFloat(p);
+    if (isNaN(n) || n === 0) return "$0";
+    if (n >= 1) return `$${n.toFixed(2)}`;
+    if (n >= 0.01) return `$${n.toFixed(4)}`;
+    if (n >= 0.0001) return `$${n.toFixed(6)}`;
+    const fixed = n.toFixed(20);
+    const match = fixed.match(/^0\.(0+)([1-9]\d{0,3})/);
+    if (match) {
+      const sub = match[1].length.toString().split("").map(d => "₀₁₂₃₄₅₆₇₈₉"[parseInt(d)]).join("");
+      return `$0.0${sub}${match[2]}`;
+    }
+    return `$${n.toExponential(2)}`;
   };
 
   const formatMcap = (m: number | null) => {
@@ -223,7 +304,6 @@ const RightSidebar = () => {
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full bg-card border border-border rounded-lg pl-10 pr-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary transition-colors"
           />
-          {/* Search Results Dropdown */}
           {searchQuery.trim() && (
             <div className="absolute top-full left-0 right-0 mt-1 bg-card border border-border rounded-lg shadow-lg z-50 max-h-80 overflow-y-auto">
               {searching ? (
@@ -232,7 +312,6 @@ const RightSidebar = () => {
                 </div>
               ) : (
                 <>
-                  {/* Token results */}
                   {tokenResults.length > 0 && (
                     <>
                       <div className="px-3 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider bg-muted/30">Tokens</div>
@@ -260,8 +339,6 @@ const RightSidebar = () => {
                       ))}
                     </>
                   )}
-
-                  {/* User results */}
                   {searchResults.length > 0 && (
                     <>
                       <div className="px-3 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider bg-muted/30">Users</div>
@@ -291,7 +368,6 @@ const RightSidebar = () => {
                       ))}
                     </>
                   )}
-
                   {tokenResults.length === 0 && searchResults.length === 0 && (
                     <div className="p-3 text-sm text-muted-foreground">No results found</div>
                   )}
@@ -357,80 +433,84 @@ const RightSidebar = () => {
           )}
         </div>
 
-        {/* ── Quick Swap ───────────────── */}
+        {/* ── Trending Tickers ─────────── */}
         <div className="rounded-xl bg-card border border-border p-4">
           <div className="flex items-center gap-2 mb-3">
-            <ArrowRightLeft className="h-4 w-4 text-primary" />
-            <h3 className="font-bold text-sm text-foreground">QUICK SWAP in repair</h3>
+            <TrendingUp className="h-4 w-4 text-primary" />
+            <h3 className="font-bold text-sm text-foreground">TRENDING TICKERS</h3>
+            <span className="text-[10px] text-muted-foreground ml-auto">24h</span>
           </div>
-
-          <div className="flex gap-1 mb-3 bg-muted/30 rounded-lg p-1">
-            <button
-              onClick={() => setSwapMode("buy")}
-              className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-colors ${
-                swapMode === "buy" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
-              }`}
-            >Buy</button>
-            <button
-              onClick={() => setSwapMode("sell")}
-              className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-colors ${
-                swapMode === "sell" ? "bg-destructive text-destructive-foreground" : "text-muted-foreground hover:text-foreground"
-              }`}
-            >Sell</button>
-          </div>
-
-          <div className="space-y-2 mb-3">
-            <label className="text-xs font-medium text-muted-foreground">Token mint address</label>
-            <Input
-              value={tokenMint}
-              onChange={(e) => { setTokenMint(e.target.value); setSwapStep("idle"); setQuoteData(null); }}
-              placeholder="Paste token address..."
-              className="bg-background border-border text-xs h-9"
-              disabled={swapLoading}
-            />
-          </div>
-
-          <div className="space-y-2 mb-3">
-            <label className="text-xs font-medium text-muted-foreground">Amount (SOL)</label>
-            <Input
-              type="number"
-              value={solAmount}
-              onChange={(e) => { setSolAmount(e.target.value); setSwapStep("idle"); setQuoteData(null); }}
-              placeholder="0.00"
-              className="bg-background border-border text-xs h-9"
-              step="0.1" min="0.01"
-              disabled={swapLoading}
-            />
-            <div className="flex gap-1">
-              {PRESET_AMOUNTS.map((amt) => (
+          {loadingTickers ? (
+            <div className="space-y-2">
+              {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-8 w-full rounded-lg" />)}
+            </div>
+          ) : trendingTickers.length === 0 ? (
+            <p className="text-xs text-muted-foreground">No tickers mentioned yet</p>
+          ) : (
+            <div className="space-y-1.5">
+              {trendingTickers.map((t, i) => (
                 <button
-                  key={amt}
-                  onClick={() => { setSolAmount(String(amt)); setSwapStep("idle"); setQuoteData(null); }}
-                  className={`flex-1 py-1 text-[10px] font-medium rounded border transition-colors ${
-                    solAmount === String(amt) ? "bg-primary/20 text-primary border-primary/30" : "bg-muted/20 text-muted-foreground border-border hover:text-foreground"
-                  }`}
-                  disabled={swapLoading}
-                >{amt}</button>
+                  key={t.symbol}
+                  onClick={() => t.tokenAddress
+                    ? navigate(`/market?token=${t.tokenAddress}`)
+                    : navigate(`/market`)
+                  }
+                  className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-muted/40 transition-colors group"
+                >
+                  <span className="text-[11px] text-muted-foreground w-4 shrink-0">#{i + 1}</span>
+                  <div className="h-7 w-7 rounded-full bg-muted flex items-center justify-center shrink-0 overflow-hidden">
+                    {t.icon
+                      ? <img src={t.icon} alt="" className="h-full w-full object-cover" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
+                      : <span className="text-[9px] font-bold text-primary">{t.symbol.slice(0, 2)}</span>
+                    }
+                  </div>
+                  <div className="flex-1 min-w-0 text-left">
+                    <span className="text-sm font-semibold text-primary">${t.symbol}</span>
+                    <span className="text-[10px] text-muted-foreground ml-1.5">{t.count} post{t.count > 1 ? "s" : ""}</span>
+                  </div>
+                  <div className="text-right shrink-0">
+                    {t.priceUsd && <div className="text-xs font-mono text-foreground">{formatPrice(t.priceUsd)}</div>}
+                    {t.priceChange != null && (
+                      <div className={`text-[10px] font-medium ${t.priceChange >= 0 ? "text-green-400" : "text-destructive"}`}>
+                        {t.priceChange >= 0 ? "+" : ""}{t.priceChange.toFixed(1)}%
+                      </div>
+                    )}
+                  </div>
+                </button>
               ))}
             </div>
-          </div>
-
-          {estimateText && swapStep === "quoted" && (
-            <div className="text-xs text-primary font-medium mb-3 text-center">{estimateText}</div>
-          )}
-          {swapError && <div className="text-xs text-destructive mb-3 text-center">{swapError}</div>}
-          {swapStep === "done" && <div className="text-xs text-primary mb-3 text-center font-semibold">✅ Swap successful!</div>}
-
-          {!quoteData || swapStep === "error" ? (
-            <Button className="w-full h-9 text-xs" onClick={handleGetQuote} disabled={swapLoading || !tokenMint.trim() || !solAmount || parseFloat(solAmount) <= 0}>
-              {swapStep === "quoting" ? <><Loader2 className="h-3 w-3 animate-spin mr-1" /> Getting quote...</> : "Get Quote"}
-            </Button>
-          ) : (
-            <Button className="w-full h-9 text-xs bg-primary hover:bg-primary/90" onClick={handleSwap} disabled={swapLoading || !walletAddress || !signTransaction}>
-              {swapLoading ? <><Loader2 className="h-3 w-3 animate-spin mr-1" /> Processing...</> : "Execute swap"}
-            </Button>
           )}
         </div>
+
+        {/* ── Trending Hashtags ─────────── */}
+        <div className="rounded-xl bg-card border border-border p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Hash className="h-4 w-4 text-primary" />
+            <h3 className="font-bold text-sm text-foreground">TRENDING TOPICS</h3>
+            <span className="text-[10px] text-muted-foreground ml-auto">24h</span>
+          </div>
+          {loadingHashtags ? (
+            <div className="flex flex-wrap gap-2">
+              {[...Array(5)].map((_, i) => <Skeleton key={i} className="h-7 w-20 rounded-full" />)}
+            </div>
+          ) : trendingHashtags.length === 0 ? (
+            <p className="text-xs text-muted-foreground">No hashtags yet</p>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {trendingHashtags.map((h) => (
+                <button
+                  key={h.tag}
+                  onClick={() => navigate(`/feed`)}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-muted/40 border border-border hover:border-primary/40 hover:bg-primary/10 hover:text-primary transition-colors text-xs text-muted-foreground"
+                >
+                  <span className="text-primary font-semibold">#</span>{h.tag}
+                  <span className="text-[10px] opacity-60 ml-0.5">{h.count}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
       </div>
     </aside>
   );

@@ -17,6 +17,19 @@ export default function SchedulePicker({ scheduledAt, onSchedule }: SchedulePick
   const [hours, setHours] = useState(scheduledAt ? String(scheduledAt.getHours()).padStart(2, "0") : "12");
   const [minutes, setMinutes] = useState(scheduledAt ? String(scheduledAt.getMinutes()).padStart(2, "0") : "00");
 
+  // Auto-select today with current time+1h when popover opens and nothing is selected yet
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (nextOpen && !selectedDate) {
+      const today = new Date();
+      setSelectedDate(today);
+      // Default to current hour + 1 (rounded), so schedule is always in future
+      const nextHour = today.getHours() + 1;
+      setHours(Math.min(23, nextHour).toString().padStart(2, "0"));
+      setMinutes(String(today.getMinutes()).padStart(2, "0"));
+    }
+    setOpen(nextOpen);
+  };
+
   const handleConfirm = () => {
     if (!selectedDate) return;
     const date = new Date(selectedDate);
@@ -34,7 +47,7 @@ export default function SchedulePicker({ scheduledAt, onSchedule }: SchedulePick
 
   return (
     <div className="flex items-center gap-1">
-      <Popover open={open} onOpenChange={setOpen}>
+      <Popover open={open} onOpenChange={handleOpenChange}>
         <PopoverTrigger asChild>
           <Button
             variant="ghost"
@@ -54,6 +67,13 @@ export default function SchedulePicker({ scheduledAt, onSchedule }: SchedulePick
               onSelect={setSelectedDate}
               disabled={(date) => date < new Date(new Date().setHours(0, 0, 0, 0))}
               className={cn("p-2 pointer-events-auto")}
+              classNames={{
+                // Today that is NOT selected: ring outline so user knows it's today but not yet chosen
+                day_today: "ring-2 ring-primary ring-offset-1 ring-offset-card font-bold text-primary",
+                // Selected day: solid filled — clearly distinct from today ring
+                day_selected:
+                  "bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground focus:bg-primary focus:text-primary-foreground ring-0",
+              }}
             />
 
             {/* Time picker */}

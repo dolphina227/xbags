@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { ArrowLeft, ExternalLink, Globe, Loader2, Users, Settings, ChevronUp, ChevronDown, Copy, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -45,7 +45,16 @@ function formatPrice(p: string | null): string {
   if (isNaN(n) || n === 0) return "$0";
   if (n >= 1_000) return `$${n.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
   if (n >= 1) return `$${n.toFixed(2)}`;
-  if (n >= 0.01) return `$${n.toFixed(5)}`;
+  if (n >= 0.01) return `$${n.toFixed(4)}`;
+  if (n >= 0.0001) return `$${n.toFixed(6)}`;
+  const fixed = n.toFixed(20);
+  const match = fixed.match(/^0\.(0+)([1-9]\d{0,3})/);
+  if (match) {
+    const zeros = match[1].length;
+    const sig = match[2];
+    const sub = zeros.toString().split("").map(d => "₀₁₂₃₄₅₆₇₈₉"[parseInt(d)]).join("");
+    return `$0.0${sub}${sig}`;
+  }
   return `$${n.toExponential(2)}`;
 }
 
@@ -70,6 +79,32 @@ export default function TokenDetail({ token, onBack }: TokenDetailProps) {
   const [showCustom, setShowCustom] = useState(true);
   const [copied, setCopied] = useState(false);
 
+  // Fetch pair data dari DexScreener untuk social links dan bubblemaps pair address
+  const [pairData, setPairData] = useState<{
+    pairAddress: string | null;
+    socials: { type: string; url: string }[];
+    websites: { url: string }[];
+  }>({ pairAddress: null, socials: [], websites: [] });
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`https://api.dexscreener.com/tokens/v1/solana/${token.tokenAddress}`)
+      .then(r => r.json())
+      .then(data => {
+        if (cancelled) return;
+        const pair = Array.isArray(data) ? data[0] : data?.pairs?.[0];
+        if (pair) {
+          setPairData({
+            pairAddress: pair.pairAddress || null,
+            socials: pair.info?.socials || [],
+            websites: pair.info?.websites || [],
+          });
+        }
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [token.tokenAddress]);
+
   const [settingsBuyAmounts, setSettingsBuyAmounts] = useState(["0.1", "0.5", "1"]);
   const [settingsSellPercents, setSettingsSellPercents] = useState(["25", "50", "100"]);
   const [settingsSlippage, setSettingsSlippage] = useState("2");
@@ -83,7 +118,7 @@ export default function TokenDetail({ token, onBack }: TokenDetailProps) {
   const { signTransaction } = useSolanaWallet();
   const loading = ["quoting", "signing", "sending", "confirming"].includes(step);
 
-  const dexScreenerChartUrl = `https://dexscreener.com/solana/${token.tokenAddress}?embed=1&theme=dark&trades=0&info=0`;
+  const dexScreenerChartUrl = `https://dexscreener.com/solana/${token.tokenAddress}?embed=1&theme=dark&trades=1&info=0`;
 
   const handleCopyAddress = () => {
     navigator.clipboard.writeText(token.tokenAddress);
@@ -180,43 +215,39 @@ export default function TokenDetail({ token, onBack }: TokenDetailProps) {
       <div className="flex flex-col xl:flex-row gap-4">
         {/* LEFT: Chart + Info - takes all available space */}
         <div className="flex-1 min-w-0">
-          {/* Chart - responsive height */}
-          <div className="bg-card border border-border rounded-xl overflow-hidden" style={{ height: "clamp(400px, 60vh, 700px)" }}>
+
+          {/* Satu iframe DexScreener: chart + txns + top traders + holders + info */}
+          <div className="bg-card border border-border rounded-xl overflow-hidden" style={{ height: "clamp(700px, 85vh, 1000px)" }}>
             <iframe
               src={dexScreenerChartUrl}
-              title="DexScreener Chart"
+              title="DexScreener"
               className="w-full h-full border-0"
               allow="clipboard-write"
               loading="lazy"
             />
           </div>
 
-          {/* Token info bar */}
-          <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-            <div className="flex items-center gap-2">
-              {token.icon && <img src={token.icon} alt="" className="w-5 h-5 rounded-full" />}
-              <span className="font-semibold text-foreground">{token.name}</span>
-              <span>${token.symbol}</span>
+          {/* Bubblemaps — tab terpisah karena tidak ada di DexScreener */}
+          <div className="mt-4 bg-card border border-border rounded-xl overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-2.5 border-b border-border">
+              <span className="text-sm font-semibold text-foreground">Bubblemaps</span>
+              <a
+                href={`https://app.bubblemaps.io/sol/token/${token.tokenAddress}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
+              >
+                <ExternalLink className="h-3 w-3" /> Open full
+              </a>
             </div>
-            <span className="text-foreground font-mono">{formatPrice(token.priceUsd)}</span>
-            {token.marketCap && <span>MCap: {formatMcap(token.marketCap)}</span>}
-            {token.volume24h && <span>Vol: {formatMcap(token.volume24h)}</span>}
-            {token.liquidity && <span>Liq: {formatMcap(token.liquidity)}</span>}
-            <button onClick={handleCopyAddress} className="flex items-center gap-1 hover:text-foreground transition-colors">
-              {copied ? <Check className="h-3 w-3 text-green-400" /> : <Copy className="h-3 w-3" />}
-              {token.tokenAddress.slice(0, 6)}...{token.tokenAddress.slice(-4)}
-            </button>
-          </div>
-
-          {/* Info tabs below chart */}
-          <div className="mt-4 bg-card border border-border rounded-xl p-4">
-            <div className="flex gap-4 border-b border-border pb-2 mb-3">
-              <span className="text-sm font-semibold text-foreground border-b-2 border-primary pb-2">Trades</span>
-              <a href={`https://solscan.io/token/${token.tokenAddress}#holders`} target="_blank" rel="noopener noreferrer" className="text-sm text-muted-foreground hover:text-foreground pb-2">Holders</a>
-              <a href={`https://solscan.io/token/${token.tokenAddress}`} target="_blank" rel="noopener noreferrer" className="text-sm text-muted-foreground hover:text-foreground pb-2">Dev Info</a>
-              <a href={`https://dexscreener.com/solana/${token.tokenAddress}`} target="_blank" rel="noopener noreferrer" className="text-sm text-muted-foreground hover:text-foreground pb-2">Top Traders</a>
+            <div style={{ height: "500px" }}>
+              <iframe
+                src={`https://app.bubblemaps.io/sol/token/${token.tokenAddress}`}
+                title="Bubblemaps"
+                className="w-full h-full border-0"
+                loading="lazy"
+              />
             </div>
-            <p className="text-sm text-muted-foreground text-center py-8">Coming soon</p>
           </div>
 
           {/* Links row */}
@@ -418,9 +449,73 @@ export default function TokenDetail({ token, onBack }: TokenDetailProps) {
               </div>
             )}
 
-            <div className="border-t border-border pt-3 text-center">
-              <p className="text-[10px] text-muted-foreground">Token analytics, holder info and more</p>
-              <p className="text-[10px] text-muted-foreground">Coming soon</p>
+            {/* CA + Social Links */}
+            <div className="border-t border-border pt-3 space-y-3">
+              {/* Contract Address */}
+              <div>
+                <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1.5">Contract Address</p>
+                <button
+                  onClick={handleCopyAddress}
+                  className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-muted/40 border border-border hover:border-primary/40 transition-colors group"
+                >
+                  <span className="text-xs font-mono text-foreground truncate">
+                    {token.tokenAddress.slice(0, 8)}...{token.tokenAddress.slice(-8)}
+                  </span>
+                  {copied
+                    ? <Check className="h-3.5 w-3.5 text-green-400 shrink-0" />
+                    : <Copy className="h-3.5 w-3.5 text-muted-foreground group-hover:text-primary shrink-0 transition-colors" />}
+                </button>
+              </div>
+
+              {/* Social & Explorer Links */}
+              <div>
+                <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1.5">Links</p>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {/* Explorer links — selalu tampil */}
+                  <a href={`https://solscan.io/token/${token.tokenAddress}`} target="_blank" rel="noopener noreferrer"
+                    className="flex flex-col items-center gap-1 py-2 rounded-lg bg-muted/30 border border-border hover:border-primary/40 hover:text-foreground text-muted-foreground transition-colors text-[10px]">
+                    <ExternalLink className="h-3.5 w-3.5" />
+                    Solscan
+                  </a>
+
+                  {/* Social links dari DexScreener — hanya tampil jika ada datanya */}
+                  {pairData.websites.map((w, i) => (
+                    <a key={`web-${i}`} href={w.url} target="_blank" rel="noopener noreferrer"
+                      className="flex flex-col items-center gap-1 py-2 rounded-lg bg-muted/30 border border-border hover:border-primary/40 hover:text-foreground text-muted-foreground transition-colors text-[10px]">
+                      <Globe className="h-3.5 w-3.5" />
+                      Website
+                    </a>
+                  ))}
+                  {pairData.socials.map((s, i) => {
+                    const isX = s.type === "twitter" || s.url?.includes("twitter.com") || s.url?.includes("x.com");
+                    const isTg = s.type === "telegram" || s.url?.includes("t.me");
+                    return (
+                      <a key={`soc-${i}`} href={s.url} target="_blank" rel="noopener noreferrer"
+                        className="flex flex-col items-center gap-1 py-2 rounded-lg bg-muted/30 border border-border hover:border-primary/40 hover:text-foreground text-muted-foreground transition-colors text-[10px]">
+                        {isX ? (
+                          <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+                          </svg>
+                        ) : isTg ? (
+                          <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z" />
+                          </svg>
+                        ) : (
+                          <ExternalLink className="h-3.5 w-3.5" />
+                        )}
+                        {isX ? "Twitter" : isTg ? "Telegram" : "Social"}
+                      </a>
+                    );
+                  })}
+
+                  {/* Bags.fm */}
+                  <a href={`https://bags.fm/token/${token.tokenAddress}`} target="_blank" rel="noopener noreferrer"
+                    className="flex flex-col items-center gap-1 py-2 rounded-lg bg-muted/30 border border-border hover:border-primary/40 hover:text-foreground text-muted-foreground transition-colors text-[10px]">
+                    <ExternalLink className="h-3.5 w-3.5" />
+                    Bags.fm
+                  </a>
+                </div>
+              </div>
             </div>
           </div>
         </div>

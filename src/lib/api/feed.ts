@@ -29,6 +29,7 @@ export interface Post {
   is_reposted?: boolean;
   is_unlocked?: boolean;
   sort_time?: string;
+  scheduled_at?: string | null;
 }
 
 export interface Comment {
@@ -501,6 +502,21 @@ export const feedAPI = {
     let posts = (data || []).map(mapPost);
     posts = posts.filter(p => p.media_urls && p.media_urls.length > 0 && p.media_urls[0] !== "");
     return posts;
+  },
+
+  // ─── GET USER SCHEDULED POSTS ─────────────────────────
+  async getUserScheduledPosts(userId: string) {
+    const { data, error } = await supabase
+      .from("posts")
+      .select(POST_WITH_AUTHOR)
+      .eq("user_id", userId)
+      .eq("is_published", false)
+      .not("scheduled_at", "is", null)
+      .order("scheduled_at", { ascending: true })
+      .limit(50);
+
+    if (error) throw error;
+    return (data || []).map(mapPost);
   },
 
   // ─── FOLLOW / UNFOLLOW ────────────────────────────────

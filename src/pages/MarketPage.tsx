@@ -3,7 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
   Search, TrendingUp, Sparkles, Globe,
-  ArrowUp, ArrowDown, RefreshCw, Loader2,
+  ArrowUp, ArrowDown, RefreshCw, Loader2, History, X,
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -31,13 +31,14 @@ interface Token {
   url?: string;
 }
 
-type TabKey = "new" | "trending" | "all";
+type TabKey = "new" | "trending" | "all" | "history";
 type Timeframe = "5m" | "1h" | "6h" | "24h";
 
 const TABS = [
   { key: "new" as TabKey, label: "New", icon: Sparkles },
   { key: "trending" as TabKey, label: "Trending", icon: TrendingUp },
   { key: "all" as TabKey, label: "All Tokens", icon: Globe },
+  { key: "history" as TabKey, label: "History", icon: History },
 ] as const;
 
 const TIMEFRAMES: { key: Timeframe; label: string }[] = [
@@ -49,6 +50,8 @@ const TIMEFRAMES: { key: Timeframe; label: string }[] = [
 
 const CACHE_TTL = 10_000;
 const AUTO_REFRESH = 30_000;
+const TOKEN_HISTORY_KEY = "xbags_token_history";
+const MAX_TOKEN_HISTORY = 20;
 
 function formatPrice(p: string | null): string {
   if (!p) return "—";
@@ -113,6 +116,36 @@ export default function MarketPage() {
   const [searchLoading, setSearchLoading] = useState(false);
   const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Token history — simpan detail token yang pernah dibuka
+  const [tokenHistory, setTokenHistory] = useState<Token[]>(() => {
+    try {
+      const raw = localStorage.getItem(TOKEN_HISTORY_KEY);
+      return raw ? JSON.parse(raw) : [];
+    } catch { return []; }
+  });
+
+  const addTokenHistory = useCallback((token: Token) => {
+    setTokenHistory(prev => {
+      const filtered = prev.filter(t => t.tokenAddress !== token.tokenAddress);
+      const updated = [token, ...filtered].slice(0, MAX_TOKEN_HISTORY);
+      try { localStorage.setItem(TOKEN_HISTORY_KEY, JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+  }, []);
+
+  const removeTokenHistory = useCallback((tokenAddress: string) => {
+    setTokenHistory(prev => {
+      const updated = prev.filter(t => t.tokenAddress !== tokenAddress);
+      try { localStorage.setItem(TOKEN_HISTORY_KEY, JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+  }, []);
+
+  const clearTokenHistory = useCallback(() => {
+    setTokenHistory([]);
+    try { localStorage.removeItem(TOKEN_HISTORY_KEY); } catch {}
+  }, []);
+
   // Handle ?token= query param from search
   useEffect(() => {
     const tokenAddr = searchParams.get("token");
@@ -121,7 +154,9 @@ export default function MarketPage() {
         body: { query: tokenAddr },
       }).then(({ data }) => {
         if (data?.success && data.tokens?.length > 0) {
-          setSelectedToken(data.tokens[0]);
+          const token = data.tokens[0];
+          setSelectedToken(token);
+          addTokenHistory(token);
           setSearchParams({}, { replace: true });
         }
       });
@@ -265,18 +300,83 @@ export default function MarketPage() {
         ))}
       </div>
 
-      {/* Timeframe pills */}
-      <div className="flex gap-1.5 mb-4">
-        {TIMEFRAMES.map((t) => (
-          <button key={t.key} onClick={() => setCurrentTf(t.key)}
-            className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-              currentTf === t.key ? "bg-primary/20 text-primary border border-primary/30" : "bg-muted/30 text-muted-foreground border border-transparent hover:text-foreground"
-            }`}>{t.label}</button>
-        ))}
-      </div>
+      {/* Timeframe pills — sembunyikan saat tab history */}
+      {activeTab !== "history" && (
+        <div className="flex gap-1.5 mb-4">
+          {TIMEFRAMES.map((t) => (
+            <button key={t.key} onClick={() => setCurrentTf(t.key)}
+              className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                currentTf === t.key ? "bg-primary/20 text-primary border border-primary/30" : "bg-muted/30 text-muted-foreground border border-transparent hover:text-foreground"
+              }`}>{t.label}</button>
+          ))}
+        </div>
+      )}
+
+      {/* History Tab — detail token yang pernah dibuka */}
+      {activeTab === "history" && (
+        <div>
+          {tokenHistory.length === 0 ? (
+            <div className="text-center py-16">
+              <History className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
+              <p className="text-sm text-muted-foreground">No token history yet</p>
+              <p className="text-xs text-muted-foreground mt-1">Tokens you open will appear here</p>
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center justify-between mb-2 px-1">
+                <span className="text-xs text-muted-foreground">{tokenHistory.length} tokens</span>
+                <button onClick={clearTokenHistory} className="text-xs text-muted-foreground hover:text-destructive transition-colors">
+                  Clear all
+                </button>
+              </div>
+              <TableHeader />
+              {tokenHistory.map((token, i) => {
+                const change = getChange(token, currentTf);
+                const isPositive = (change ?? 0) >= 0;
+                const mcap = token.marketCap || token.fdv || null;
+                return (
+                  <motion.div key={token.tokenAddress} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.02 }}
+                    className="flex items-center gap-2 py-2.5 px-3 border-b border-border hover:bg-muted/20 active:bg-muted/40 cursor-pointer transition-colors group"
+                    onClick={() => { addTokenHistory(token); setSelectedToken(token); }}>
+                    <span className="w-6 text-center text-[10px] text-muted-foreground">{i + 1}</span>
+                    <div className="w-8 h-8 rounded-full overflow-hidden bg-card border border-border flex items-center justify-center shrink-0">
+                      {token.icon ? (
+                        <img src={token.icon} alt="" className="w-full h-full object-cover" loading="lazy"
+                          onError={(e) => { const el = e.currentTarget; el.style.display = "none"; }} />
+                      ) : (
+                        <span className="text-[10px] font-bold text-primary">{(token.symbol || token.name || "?").slice(0, 2).toUpperCase()}</span>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <span className="text-sm font-semibold text-foreground truncate block">{token.name || "Unknown"}</span>
+                      <span className="text-[10px] text-muted-foreground">${token.symbol || "???"}</span>
+                    </div>
+                    <div className="w-20 text-right"><span className="text-xs font-mono text-foreground">{formatPrice(token.priceUsd)}</span></div>
+                    <div className="w-16 text-right">
+                      {change !== null ? (
+                        <span className={`inline-flex items-center gap-0.5 text-xs font-medium ${isPositive ? "text-success" : "text-destructive"}`}>
+                          {isPositive ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />}
+                          {Math.abs(change).toFixed(1)}%
+                        </span>
+                      ) : <span className="text-xs text-muted-foreground">—</span>}
+                    </div>
+                    <div className="w-20 text-right hidden sm:block"><span className="text-xs text-muted-foreground">{formatMcap(mcap)}</span></div>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); removeTokenHistory(token.tokenAddress); }}
+                      className="opacity-0 group-hover:opacity-100 transition-opacity ml-1 text-muted-foreground hover:text-destructive shrink-0"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </motion.div>
+                );
+              })}
+            </>
+          )}
+        </div>
+      )}
 
       {/* Error */}
-      {error && !loading && (
+      {activeTab !== "history" && error && !loading && (
         <div className="flex flex-col items-center gap-3 py-12">
           <p className="text-sm text-muted-foreground">{error}</p>
           <Button variant="outline" size="sm" onClick={() => fetchTokens(activeTab, currentTf)} className="gap-1.5">
@@ -286,7 +386,7 @@ export default function MarketPage() {
       )}
 
       {/* Loading */}
-      {loading && tokens.length === 0 && !error && (
+      {activeTab !== "history" && loading && tokens.length === 0 && !error && (
         <div>
           <TableHeader />
           {[...Array(7)].map((_, i) => (
@@ -303,14 +403,14 @@ export default function MarketPage() {
       )}
 
       {/* Empty */}
-      {!loading && !error && displayTokens.length === 0 && (
+      {activeTab !== "history" && !loading && !error && displayTokens.length === 0 && (
         <div className="text-center py-12">
           <p className="text-sm text-muted-foreground">No tokens found</p>
         </div>
       )}
 
       {/* Token list */}
-      {!error && displayTokens.length > 0 && (
+      {activeTab !== "history" && !error && displayTokens.length > 0 && (
         <div>
           <TableHeader />
           {displayTokens.map((token, i) => {
@@ -320,7 +420,7 @@ export default function MarketPage() {
             const showNewBadge = activeTab === "new" && !!token.pairCreatedAt && Date.now() - token.pairCreatedAt < 3_600_000;
             return (
               <motion.div key={token.tokenAddress} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.02 }}
-                onClick={() => setSelectedToken(token)}
+                onClick={() => { addTokenHistory(token); setSelectedToken(token); }}
                 className="flex items-center gap-2 py-2.5 px-3 border-b border-border hover:bg-muted/20 active:bg-muted/40 cursor-pointer transition-colors">
                 <span className="w-6 text-center text-[10px] text-muted-foreground">{i + 1}</span>
                 <div className="w-8 h-8 rounded-full overflow-hidden bg-card border border-border flex items-center justify-center shrink-0">
