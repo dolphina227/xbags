@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { motion } from "framer-motion";
 import { Wallet, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -53,7 +54,10 @@ const WalletConnect = ({ variant = "default" }: WalletConnectProps) => {
             <Wallet className="h-5 w-5" />
             <span className="text-[10px] font-medium">Wallet</span>
           </button>
-          <WalletModal open={modalOpen} onClose={() => setModalOpen(false)} />
+          {createPortal(
+            <WalletModal open={modalOpen} onClose={() => setModalOpen(false)} />,
+            document.body
+          )}
         </>
       );
     }
@@ -70,7 +74,10 @@ const WalletConnect = ({ variant = "default" }: WalletConnectProps) => {
             <Wallet className="h-4 w-4" />
             <span className="text-xs font-semibold">Connect</span>
           </Button>
-          <WalletModal open={modalOpen} onClose={() => setModalOpen(false)} />
+          {createPortal(
+            <WalletModal open={modalOpen} onClose={() => setModalOpen(false)} />,
+            document.body
+          )}
         </>
       );
     }
@@ -88,7 +95,10 @@ const WalletConnect = ({ variant = "default" }: WalletConnectProps) => {
             Connect Wallet
           </Button>
         </motion.div>
-        <WalletModal open={modalOpen} onClose={() => setModalOpen(false)} />
+        {createPortal(
+          <WalletModal open={modalOpen} onClose={() => setModalOpen(false)} />,
+          document.body
+        )}
       </>
     );
   }

@@ -117,10 +117,16 @@ const ProfilePage = () => {
 
   // Load scheduled posts when tab is active (only own profile)
   useEffect(() => {
-    if (activeTab !== "scheduled" || !viewProfile?.id || !isOwnProfile) return;
+    // Double guard: hanya load jika ini profil sendiri DAN user sudah login
+    if (activeTab !== "scheduled" || !viewProfile?.id || !isOwnProfile || !myProfile?.id) return;
+    // Extra check: pastikan profile yang dilihat adalah milik user yang login
+    if (viewProfile.id !== myProfile.id) return;
     setScheduledLoading(true);
-    feedAPI.getUserScheduledPosts(viewProfile.id).then(setScheduledPosts).catch(() => {}).finally(() => setScheduledLoading(false));
-  }, [activeTab, viewProfile?.id, isOwnProfile]);
+    feedAPI.getUserScheduledPosts(viewProfile.id, myProfile.id)
+      .then(setScheduledPosts)
+      .catch(() => {})
+      .finally(() => setScheduledLoading(false));
+  }, [activeTab, viewProfile?.id, isOwnProfile, myProfile?.id]);
 
   const handlePostUpdate = useCallback((postId: string, updates: Partial<Post>) => {
     setPosts(prev => prev.map(p => p.id === postId ? { ...p, ...updates } : p));

@@ -504,8 +504,13 @@ export const feedAPI = {
     return posts;
   },
 
-  // ─── GET USER SCHEDULED POSTS ─────────────────────────
-  async getUserScheduledPosts(userId: string) {
+  // ─── GET USER SCHEDULED POSTS (owner only) ────────────
+  async getUserScheduledPosts(userId: string, requesterId?: string) {
+    // Hanya pemilik akun yang boleh melihat scheduled posts
+    if (!requesterId || requesterId !== userId) {
+      return [];
+    }
+
     const { data, error } = await supabase
       .from("posts")
       .select(POST_WITH_AUTHOR)

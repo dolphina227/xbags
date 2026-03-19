@@ -107,7 +107,7 @@ const ProfileSetupModal = () => {
 
   return (
     <Dialog open={showSetupModal} onOpenChange={setShowSetupModal}>
-      <DialogContent className="sm:max-w-md bg-card border-border max-h-[90vh] p-0">
+      <DialogContent className="sm:max-w-md bg-card border-border max-h-[90vh] p-0 z-[150]">
         <DialogHeader className="px-6 pt-6 pb-2">
           <DialogTitle className="text-foreground">Set Up Your Profile</DialogTitle>
           <DialogDescription className="text-muted-foreground">
