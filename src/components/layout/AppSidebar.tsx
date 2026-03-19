@@ -10,6 +10,7 @@ import { ChevronUp, Plus, ArrowUpRight, LogOut, Wallet } from "lucide-react";
 import WalletConnect from "@/components/wallet/WalletConnect";
 import AddFundsModal from "@/components/wallet/AddFundsModal";
 import WithdrawModal from "@/components/wallet/WithdrawModal";
+import WalletDrawer from "@/components/wallet/WalletDrawer";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import CreatePostModal from "@/components/feed/CreatePostModal";
 
@@ -21,6 +22,7 @@ const AppSidebar = () => {
   const [addFundsOpen, setAddFundsOpen] = useState(false);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [createPostOpen, setCreatePostOpen] = useState(false);
+  const [walletDrawerOpen, setWalletDrawerOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -108,6 +110,8 @@ const AppSidebar = () => {
                   transition={{ duration: 0.15 }}
                   className="absolute bottom-full left-3 right-3 mb-2 z-50 rounded-xl bg-card border border-border shadow-modal p-2"
                 >
+                  <MenuItem icon={<Wallet className="h-4 w-4" />} label="My Wallet" onClick={() => { setWalletDrawerOpen(true); setUserMenuOpen(false); }} />
+                  <div className="border-t border-border my-1" />
                   <MenuItem icon={<Plus className="h-4 w-4" />} label="Add Funds" onClick={() => { setAddFundsOpen(true); setUserMenuOpen(false); }} />
                   <MenuItem icon={<ArrowUpRight className="h-4 w-4" />} label="Withdraw" onClick={() => { setWithdrawOpen(true); setUserMenuOpen(false); }} />
                   <div className="border-t border-border my-1" />
@@ -123,6 +127,7 @@ const AppSidebar = () => {
 
             <AddFundsModal open={addFundsOpen} onClose={() => setAddFundsOpen(false)} />
             <WithdrawModal open={withdrawOpen} onClose={() => setWithdrawOpen(false)} />
+            <WalletDrawer open={walletDrawerOpen} onClose={() => setWalletDrawerOpen(false)} />
           </>
         ) : (
           <div className="p-3">

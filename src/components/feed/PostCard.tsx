@@ -610,6 +610,37 @@ function TokenAddressChip({ address }: { address: string }) {
   );
 }
 
+// ── MentionChip ───────────────────────────────────────────────────────────────
+function MentionChip({ username }: { username: string }) {
+  const navigate = useNavigate();
+  const [avatar, setAvatar] = useState<string | null>(null);
+
+  useEffect(() => {
+    supabase
+      .from("profiles")
+      .select("avatar_url")
+      .eq("username", username)
+      .single()
+      .then(({ data }) => { if (data?.avatar_url) setAvatar(data.avatar_url); });
+  }, [username]);
+
+  return (
+    <span
+      onClick={(e) => { e.stopPropagation(); navigate(`/profile/${username}`); }}
+      className="inline-flex items-center gap-1 text-primary font-semibold cursor-pointer hover:underline underline-offset-2 decoration-primary/50 transition-colors"
+    >
+      {avatar ? (
+        <img src={avatar} alt="" className="h-4 w-4 rounded-full object-cover inline-block" />
+      ) : (
+        <span className="h-4 w-4 rounded-full bg-primary/20 inline-flex items-center justify-center text-[8px] font-bold text-primary">
+          {username[0]?.toUpperCase()}
+        </span>
+      )}
+      @{username}
+    </span>
+  );
+}
+
 // ── PostContent ───────────────────────────────────────────────────────────────
 // Renders post text. $TICKER (all-caps 1–10 chars) becomes a hoverable + clickable link.
 // Solana CA (base58, 32-44 chars) menjadi token chip dengan detail otomatis.
@@ -623,13 +654,13 @@ interface PostContentProps {
 // Regex untuk Solana address: base58, panjang 32-44 karakter
 const SOLANA_ADDRESS_REGEX = /\b([1-9A-HJ-NP-Za-km-z]{32,44})\b/g;
 
-function PostContent({ content }: PostContentProps) {
+export function PostContent({ content }: PostContentProps) {
   const navigate = useNavigate();
   const [hoverState, setHoverState] = useState<{ ticker: string; rect: DOMRect } | null>(null);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Split berdasarkan $TICKER, Solana address, dan #hashtag
-  const parts = content.split(/(\$[A-Z]{1,10}(?![A-Za-z])|\b[1-9A-HJ-NP-Za-km-z]{32,44}\b|#[a-zA-Z0-9_]{1,30})/g);
+  // Split berdasarkan $TICKER, Solana address, #hashtag, dan @mention
+  const parts = content.split(/(\$[A-Z]{1,10}(?![A-Za-z])|\b[1-9A-HJ-NP-Za-km-z]{32,44}\b|#[a-zA-Z0-9_]{1,30}|@[a-zA-Z0-9_]{1,30})/g);
 
   const showPopup = useCallback((ticker: string, e: React.MouseEvent) => {
     if (hideTimer.current) clearTimeout(hideTimer.current);
@@ -676,19 +707,18 @@ function PostContent({ content }: PostContentProps) {
           if (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(part)) {
             return <TokenAddressChip key={i} address={part} />;
           }
-          // #hashtag — warna unik, klik filter feed
+          // #hashtag — warna unik
           if (/^#[a-zA-Z0-9_]{1,30}$/.test(part)) {
             return (
-              <span
-                key={i}
-                className="text-info font-semibold cursor-pointer hover:underline underline-offset-2 decoration-info/50 transition-colors"
-                onClick={(e) => {
-                  e.stopPropagation();
-                }}
-              >
+              <span key={i} className="text-info font-semibold cursor-pointer hover:underline underline-offset-2 decoration-info/50 transition-colors"
+                onClick={(e) => e.stopPropagation()}>
                 {part}
               </span>
             );
+          }
+          // @mention — tampilkan dengan avatar inline
+          if (/^@[a-zA-Z0-9_]{1,30}$/.test(part)) {
+            return <MentionChip key={i} username={part.slice(1)} />;
           }
           return <span key={i}>{part}</span>;
         })}
@@ -934,19 +964,21 @@ export default function PostCard({ post, onUpdate, onDelete, index }: PostCardPr
               </div>
             )}
 
-            <div className="flex items-center justify-between mt-3 -ml-2">
-              <div className="flex items-center gap-0.5">
-                <Button variant="ghost" size="sm" onClick={() => setShowComments(!showComments)} className="gap-1.5 text-muted-foreground hover:text-primary text-xs h-8 px-2 group">
-                  <div className="p-1 rounded-full group-hover:bg-primary/10 transition-colors"><MessageCircle className="h-3.5 w-3.5" /></div>
+            <div className="flex items-center justify-between mt-3">
+              <div className="flex items-center gap-1">
+                {/* Comment */}
+                <button onClick={() => setShowComments(!showComments)} className="flex items-center gap-1.5 h-8 px-2 rounded-full text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors text-xs">
+                  <MessageCircle className="h-4 w-4" />
                   <span>{formatCount(displayPost.comments_count)}</span>
-                </Button>
+                </button>
 
+                {/* Repost */}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="sm" disabled={reposting} className={`gap-1.5 text-xs h-8 px-2 group ${displayPost.is_reposted ? "text-primary" : "text-muted-foreground hover:text-primary"}`}>
-                      <div className={`p-1 rounded-full transition-colors ${displayPost.is_reposted ? "bg-primary/10" : "group-hover:bg-primary/10"}`}><Repeat2 className="h-3.5 w-3.5" /></div>
+                    <button disabled={reposting} className={`flex items-center gap-1.5 h-8 px-2 rounded-full transition-colors text-xs ${displayPost.is_reposted ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-primary hover:bg-primary/10"}`}>
+                      <Repeat2 className="h-4 w-4" />
                       <span>{formatCount(displayPost.reposts_count || 0)}</span>
-                    </Button>
+                    </button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="start" className="min-w-[160px]">
                     <DropdownMenuItem onClick={handleRepost}><Repeat2 className="h-4 w-4 mr-2" />{displayPost.is_reposted ? "Undo Repost" : "Repost"}</DropdownMenuItem>
@@ -955,29 +987,30 @@ export default function PostCard({ post, onUpdate, onDelete, index }: PostCardPr
                   </DropdownMenuContent>
                 </DropdownMenu>
 
-                <Button variant="ghost" size="sm" onClick={handleLike} disabled={liking} className={`gap-1.5 text-xs h-8 px-2 group ${displayPost.is_liked ? "text-destructive" : "text-muted-foreground hover:text-destructive"}`}>
-                  <motion.div className={`p-1 rounded-full transition-colors ${displayPost.is_liked ? "bg-destructive/10" : "group-hover:bg-destructive/10"}`} whileTap={{ scale: 1.4 }} transition={{ type: "spring", stiffness: 400, damping: 10 }}>
-                    <Heart className={`h-3.5 w-3.5 ${displayPost.is_liked ? "fill-current" : ""}`} />
-                  </motion.div>
+                {/* Like */}
+                <motion.button onClick={handleLike} disabled={liking} className={`flex items-center gap-1.5 h-8 px-2 rounded-full transition-colors text-xs ${displayPost.is_liked ? "text-destructive bg-destructive/10" : "text-muted-foreground hover:text-destructive hover:bg-destructive/10"}`} whileTap={{ scale: 1.15 }} transition={{ type: "spring", stiffness: 400, damping: 10 }}>
+                  <Heart className={`h-4 w-4 ${displayPost.is_liked ? "fill-current" : ""}`} />
                   <AnimatePresence mode="wait">
-                    <motion.span key={displayPost.likes_count} initial={{ y: -8, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 8, opacity: 0 }} transition={{ duration: 0.15 }}>
+                    <motion.span key={displayPost.likes_count} initial={{ y: -6, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 6, opacity: 0 }} transition={{ duration: 0.12 }}>
                       {formatCount(displayPost.likes_count)}
                     </motion.span>
                   </AnimatePresence>
-                </Button>
+                </motion.button>
 
+                {/* Tip */}
                 {!isOwn && displayPost.author?.wallet_address && (
-                  <Button variant="ghost" size="sm" onClick={() => setShowTipModal(true)} className="gap-1.5 text-muted-foreground hover:text-warning text-xs h-8 px-2 group">
-                    <div className="p-1 rounded-full group-hover:bg-warning/10 transition-colors"><Diamond className="h-3.5 w-3.5" /></div>
-                  </Button>
+                  <button onClick={() => setShowTipModal(true)} className="flex items-center gap-1.5 h-8 px-2 rounded-full text-muted-foreground hover:text-warning hover:bg-warning/10 transition-colors text-xs">
+                    <Diamond className="h-4 w-4" />
+                  </button>
                 )}
 
+                {/* Share */}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground hover:text-primary text-xs h-8 px-2 group">
-                      <div className="p-1 rounded-full group-hover:bg-primary/10 transition-colors"><Share2 className="h-3.5 w-3.5" /></div>
+                    <button className="flex items-center gap-1.5 h-8 px-2 rounded-full text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors text-xs">
+                      <Share2 className="h-4 w-4" />
                       <span>{formatCount(displayPost.shares_count)}</span>
-                    </Button>
+                    </button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="start" className="min-w-[160px]">
                     <DropdownMenuItem onClick={handleShareToX}><ExternalLink className="h-4 w-4 mr-2" />Share to X</DropdownMenuItem>

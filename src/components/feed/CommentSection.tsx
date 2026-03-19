@@ -6,6 +6,7 @@ import { feedAPI, Comment } from "@/lib/api/feed";
 import { useProfile } from "@/hooks/use-profile";
 import { toast } from "sonner";
 import EmojiPicker from "./EmojiPicker";
+import { PostContent } from "@/components/feed/PostCard";
 
 function timeAgo(dateStr: string) {
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -134,7 +135,7 @@ export default function CommentSection({ postId, alwaysOpen, onCommentAdded, onC
                     )}
                   </div>
                 </div>
-                <p className="text-xs text-foreground/80 mt-0.5">{c.content}</p>
+                <PostContent content={c.content} />
               </div>
             </div>
           ))}

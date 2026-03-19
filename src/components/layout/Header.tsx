@@ -1,12 +1,17 @@
-import { Bell } from "lucide-react";
+import { useState } from "react";
+import { Bell, Wallet } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import xbagsLogo from "@/assets/xbags-logo.png";
 import WalletConnect from "@/components/wallet/WalletConnect";
+import WalletDrawer from "@/components/wallet/WalletDrawer";
 import { useNotifications } from "@/hooks/use-notifications";
+import { useWallet } from "@/hooks/use-wallet";
 
 const Header = () => {
   const navigate = useNavigate();
   const { unreadCount } = useNotifications();
+  const { status } = useWallet();
+  const [walletDrawerOpen, setWalletDrawerOpen] = useState(false);
 
   return (
     <header className="sticky top-0 z-50 flex items-center justify-between px-4 h-14 border-b border-border bg-background/80 backdrop-blur-xl">
@@ -32,8 +37,22 @@ const Header = () => {
             </span>
           )}
         </button>
-        <WalletConnect variant="header" />
+
+        {/* My Wallet button — desktop only, hanya saat connected */}
+        {status === "connected" ? (
+          <button
+            onClick={() => setWalletDrawerOpen(true)}
+            className="hidden md:flex items-center gap-2 h-9 px-3 rounded-lg border border-border hover:border-primary/40 hover:bg-muted transition-colors text-sm text-foreground"
+          >
+            <Wallet className="h-4 w-4 text-primary" />
+            My Wallet
+          </button>
+        ) : (
+          <WalletConnect variant="header" />
+        )}
       </div>
+
+      <WalletDrawer open={walletDrawerOpen} onClose={() => setWalletDrawerOpen(false)} />
     </header>
   );
 };
