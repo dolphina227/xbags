@@ -50,13 +50,13 @@ const AppSidebar = () => {
               key={item.url}
               to={item.url}
               end={item.url === "/feed"}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
-                isActive ? "" : "text-muted-foreground hover:text-foreground hover:bg-muted"
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium tracking-tight transition-all ${
+                isActive ? "" : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
               }`}
               activeClassName="bg-primary/10 text-primary font-semibold"
             >
-              <item.icon className="h-5 w-5 shrink-0" />
-              <span>{item.title}</span>
+              <item.icon className="h-[18px] w-[18px] shrink-0" />
+              <span className="leading-none">{item.title}</span>
             </NavLink>
           );
         })}
@@ -66,7 +66,7 @@ const AppSidebar = () => {
       <div className="px-4 py-3">
         <button
           onClick={() => setCreatePostOpen(true)}
-          className="w-full py-3 rounded-xl bg-primary text-primary-foreground font-bold text-sm hover:bg-secondary transition-colors hover:shadow-glow"
+          className="w-full py-2.5 rounded-xl bg-primary text-primary-foreground font-bold text-sm tracking-tight hover:bg-primary/90 transition-all hover:shadow-glow active:scale-95"
         >
           Create Post
         </button>

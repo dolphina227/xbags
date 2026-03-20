@@ -9,6 +9,8 @@ import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Camera, Check, X, Loader2, MapPin, Link as LinkIcon } from "lucide-react";
 import { useProfile } from "@/hooks/use-profile";
 import { useWallet, truncateAddress } from "@/hooks/use-wallet";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
 const USERNAME_REGEX = /^[a-zA-Z0-9_]{3,20}$/;
 
@@ -96,10 +98,101 @@ const ProfileSetupModal = () => {
       location: location || undefined,
       website: website || undefined,
     });
-    setIsSaving(false);
 
     if (success) {
+      // ── Proses referral ──
+      // PENTING: updateProfile memanggil fetchProfile() di dalamnya,
+      // tapi React state belum update saat baris ini dijalankan.
+      // Jadi kita fetch langsung dari database pakai wallet address.
+      try {
+        const refCode = localStorage.getItem("xbags_ref")
+          || new URLSearchParams(window.location.search).get("ref");
+
+        if (refCode && address) {
+          // Fetch profile ID langsung dari DB (bukan dari state yang mungkin belum update)
+          const { data: freshProfile } = await supabase
+            .from("profiles")
+            .select("id")
+            .eq("wallet_address", address)
+            .single();
+
+          const userId = freshProfile?.id;
+          if (!userId) throw new Error("Profile ID not found");
+
+          // Cek sudah pernah pakai referral
+          const { data: alreadyUsed } = await supabase
+            .from("referral_uses" as any)
+            .select("id")
+            .eq("used_by_user_id", userId)
+            .maybeSingle();
+
+          if (!alreadyUsed) {
+            // Cari referral code
+            const { data: referral } = await supabase
+              .from("referrals" as any)
+              .select("id, user_id, total_referrals, total_points")
+              .eq("code", refCode.trim().toUpperCase())
+              .maybeSingle();
+
+            // Juga coba tanpa uppercase jika tidak ketemu
+            const { data: referral2 } = !referral ? await supabase
+              .from("referrals" as any)
+              .select("id, user_id, total_referrals, total_points")
+              .eq("code", refCode.trim())
+              .maybeSingle() : { data: null };
+
+            const ref = (referral || referral2) as any;
+
+            if (ref && ref.user_id !== userId) {
+              // Update poin pemilik referral
+              const { error: updateErr } = await supabase
+                .from("referrals" as any)
+                .update({
+                  total_referrals: (ref.total_referrals || 0) + 1,
+                  total_points: (ref.total_points || 0) + 5000,
+                })
+                .eq("id", ref.id);
+
+              if (!updateErr) {
+                // Catat pemakaian
+                await supabase
+                  .from("referral_uses" as any)
+                  .insert({
+                    referral_id: ref.id,
+                    used_by_user_id: userId,
+                    points_granted: 5000,
+                  });
+
+                // Beri 5000 poin ke user yang baru daftar juga
+                await supabase
+                  .from("referrals" as any)
+                  .upsert({
+                    user_id: userId,
+                    code: `REF${userId.slice(0, 6).toUpperCase()}`,
+                    total_referrals: 0,
+                    total_points: 5000,
+                  }, { onConflict: "user_id" });
+
+                toast.success("🎉 You got 5,000 xBAGS Points for joining via referral!");
+              }
+            }
+          }
+
+          // Bersihkan
+          localStorage.removeItem("xbags_ref");
+          const url = new URL(window.location.href);
+          url.searchParams.delete("ref");
+          window.history.replaceState({}, "", url.toString());
+        }
+      } catch (err) {
+        console.error("[referral] error:", err);
+        // Silent — jangan blokir setup
+      }
+
+      setIsSaving(false);
       setShowSetupModal(false);
+    } else {
+      setIsSaving(false);
     }
   };
 
@@ -107,7 +200,7 @@ const ProfileSetupModal = () => {
 
   return (
     <Dialog open={showSetupModal} onOpenChange={setShowSetupModal}>
-      <DialogContent className="sm:max-w-md bg-card border-border max-h-[90vh] p-0 z-[150]">
+      <DialogContent className="sm:max-w-md bg-card border-border max-h-[90vh] p-0">
         <DialogHeader className="px-6 pt-6 pb-2">
           <DialogTitle className="text-foreground">Set Up Your Profile</DialogTitle>
           <DialogDescription className="text-muted-foreground">

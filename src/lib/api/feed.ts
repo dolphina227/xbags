@@ -302,31 +302,6 @@ export const feedAPI = {
         throw error;
       }
       await supabase.rpc("increment_likes" as any, { p_post_id: postId });
-
-      // Kirim notifikasi like dengan data sender
-      try {
-        const [senderRes, postRes] = await Promise.all([
-          supabase.from("profiles").select("username, display_name, avatar_url").eq("id", userId).single(),
-          supabase.from("posts").select("user_id").eq("id", postId).single(),
-        ]);
-        const sender = senderRes.data;
-        const postOwner = postRes.data;
-        if (postOwner && postOwner.user_id !== userId) {
-          await supabase.from("notifications").insert({
-            user_id: postOwner.user_id,
-            type: "like",
-            title: `${sender?.display_name || sender?.username || "Someone"} liked your post`,
-            message: "",
-            data: {
-              post_id: postId,
-              sender_username: sender?.username,
-              sender_avatar_url: sender?.avatar_url,
-            },
-            read: false,
-          } as any);
-        }
-      } catch { /* silent */ }
-
       return true;
     }
   },
@@ -351,6 +326,7 @@ export const feedAPI = {
         throw error;
       }
       await supabase.rpc("increment_reposts" as any, { p_post_id: postId });
+
       return true;
     }
   },
@@ -395,27 +371,6 @@ export const feedAPI = {
 
     if (error) throw error;
     await supabase.rpc("increment_comments" as any, { p_post_id: postId });
-
-    // Kirim notifikasi comment dengan sender data
-    try {
-      const postRes = await supabase.from("posts").select("user_id").eq("id", postId).single();
-      const sender = (data as any).profiles;
-      if (postRes.data && postRes.data.user_id !== userId) {
-        await supabase.from("notifications").insert({
-          user_id: postRes.data.user_id,
-          type: "comment",
-          title: `${sender?.display_name || sender?.username || "Someone"} replied to your post`,
-          message: content.slice(0, 100),
-          data: {
-            post_id: postId,
-            sender_username: sender?.username,
-            sender_avatar_url: sender?.avatar_url,
-          },
-          read: false,
-        } as any);
-      }
-    } catch { /* silent */ }
-
     return { ...data, author: (data as any).profiles } as Comment;
   },
 
@@ -615,7 +570,7 @@ export const feedAPI = {
       .from("follows" as any)
       .insert({ follower_id: followerId, following_id: followingId } as any);
     if (error) {
-      if (error.code === "23505") return; // already following
+      if (error.code === "23505") return;
       throw error;
     }
     await Promise.all([

@@ -1,10 +1,20 @@
 import { useNavigate } from "react-router-dom";
+import { useEffect } from "react";
 import { motion } from "framer-motion";
 import landingBg from "@/assets/landing-bg.png";
 import xbagsLogo from "@/assets/xbags-logo-new.png";
 
 const LandingPage = () => {
   const navigate = useNavigate();
+
+  // Simpan ref code ke localStorage saat halaman dimuat
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const refCode = params.get("ref");
+    if (refCode) {
+      localStorage.setItem("xbags_ref", refCode);
+    }
+  }, []);
 
   return (
     <div

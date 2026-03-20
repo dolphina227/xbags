@@ -1,28 +1,29 @@
 import {
   Home,
-  Compass,
   Bell,
   User,
   Settings,
   MessageSquare,
   BarChart3,
+  Gift,
 } from "lucide-react";
 
 export const NAV_ITEMS = [
-  { title: "Home", url: "/feed", icon: Home },
-  { title: "Market", url: "/market", icon: BarChart3 },
+  { title: "Home",          url: "/feed",         icon: Home },
+  { title: "Market",        url: "/market",        icon: BarChart3 },
   { title: "Notifications", url: "/notifications", icon: Bell },
-  { title: "Messages", url: "/messages", icon: MessageSquare },
-  { title: "Profile", url: "/profile/me", icon: User },
-  { title: "Settings", url: "/settings", icon: Settings },
+  { title: "Messages",      url: "/messages",      icon: MessageSquare },
+  { title: "Referral",      url: "/referral",      icon: Gift },
+  { title: "Profile",       url: "/profile/me",    icon: User },
+  { title: "Settings",      url: "/settings",      icon: Settings },
 ] as const;
 
 export const MOBILE_NAV_ITEMS = [
-  { title: "Home", url: "/feed", icon: Home },
-  { title: "Market", url: "/market", icon: BarChart3 },
-  // Wallet button is handled separately as floating button
-  { title: "Notifications", url: "/notifications", icon: Bell },
-  { title: "Messages", url: "/messages", icon: MessageSquare },
+  { title: "Home",    url: "/feed",         icon: Home },
+  { title: "Market",  url: "/market",       icon: BarChart3 },
+  // Wallet button handled separately as floating button
+  { title: "Notifs",  url: "/notifications", icon: Bell },
+  { title: "Referral", url: "/referral",    icon: Gift },
 ] as const;
 
 export const APP_NAME = "xBAGS";

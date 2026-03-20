@@ -147,7 +147,7 @@ export default function TokenDetail({ token, onBack }: TokenDetailProps) {
     refreshTokenBalance();
   }, [walletAddress, token.tokenAddress]);
 
-  const dexScreenerChartUrl = `https://dexscreener.com/solana/${token.tokenAddress}?embed=1&theme=dark&trades=1&info=0`;
+  const dexScreenerChartUrl = `https://dexscreener.com/solana/${token.tokenAddress}?embed=1&theme=dark&trades=1&info=0&chartType=usd&chartLeftToolbar=0&chartTheme=dark&chartStyle=0&chartTimezone=UTC&chartDefaultOnMobile=trades`;
 
   const handleCopyAddress = () => {
     navigator.clipboard.writeText(token.tokenAddress);
@@ -264,14 +264,17 @@ export default function TokenDetail({ token, onBack }: TokenDetailProps) {
         <div className="flex-1 min-w-0">
 
           {/* Satu iframe DexScreener: chart + txns + top traders + holders + info */}
+          {/* Wrapper overflow:hidden untuk crop tab bar bawaan DexScreener (~41px) */}
           <div className="bg-card border border-border rounded-xl overflow-hidden" style={{ height: "clamp(700px, 85vh, 1000px)" }}>
-            <iframe
-              src={dexScreenerChartUrl}
-              title="DexScreener"
-              className="w-full h-full border-0"
-              allow="clipboard-write"
-              loading="lazy"
-            />
+            <div style={{ marginTop: "-41px", height: "calc(100% + 41px)" }}>
+              <iframe
+                src={dexScreenerChartUrl}
+                title="DexScreener"
+                className="w-full h-full border-0"
+                allow="clipboard-write"
+                loading="lazy"
+              />
+            </div>
           </div>
 
           {/* Links row */}

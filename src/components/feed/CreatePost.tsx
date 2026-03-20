@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import { ImagePlus, X, Loader2 } from "lucide-react";
+import { ImagePlus, Video, X, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useProfile } from "@/hooks/use-profile";
@@ -19,14 +19,17 @@ export default function CreatePost({ onPostCreated }: CreatePostProps) {
   const { status } = useWallet();
   const [content, setContent] = useState("");
   const [mediaFiles, setMediaFiles] = useState<File[]>([]);
-  const [mediaPreviews, setMediaPreviews] = useState<string[]>([]);
+  const [mediaPreviews, setMediaPreviews] = useState<{ url: string; type: string }[]>([]);
   const [posting, setPosting] = useState(false);
   const [scheduledAt, setScheduledAt] = useState<Date | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const videoInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const maxChars = 280;
+  const maxChars = 1000;
   const remaining = maxChars - content.length;
+  const isNearLimit = remaining < 100;
+  const isAtLimit = remaining <= 0;
 
   if (status !== "connected" || !profile) return null;
 
@@ -35,7 +38,11 @@ export default function CreatePost({ onPostCreated }: CreatePostProps) {
     if (files.length === 0) return;
     const newFiles = [...mediaFiles, ...files].slice(0, 4);
     setMediaFiles(newFiles);
-    setMediaPreviews(newFiles.map((f) => URL.createObjectURL(f)));
+    setMediaPreviews(newFiles.map((f) => ({
+      url: URL.createObjectURL(f),
+      type: f.type.startsWith("video") ? "video" : "image",
+    })));
+    e.target.value = "";
   };
 
   const removeMedia = (index: number) => {
@@ -51,16 +58,13 @@ export default function CreatePost({ onPostCreated }: CreatePostProps) {
       const newContent = content.slice(0, start) + emoji + content.slice(end);
       if (newContent.length <= maxChars) {
         setContent(newContent);
-        // Restore cursor position after emoji
         setTimeout(() => {
           textarea.selectionStart = textarea.selectionEnd = start + emoji.length;
           textarea.focus();
         }, 0);
       }
     } else {
-      if (content.length + emoji.length <= maxChars) {
-        setContent((prev) => prev + emoji);
-      }
+      if (content.length + emoji.length <= maxChars) setContent((prev) => prev + emoji);
     }
   };
 
@@ -78,12 +82,7 @@ export default function CreatePost({ onPostCreated }: CreatePostProps) {
         : "none";
 
       const post = await feedAPI.createPost(
-        profile.id,
-        content.trim(),
-        mediaUrls,
-        mediaType,
-        false,
-        0,
+        profile.id, content.trim(), mediaUrls, mediaType, false, 0,
         scheduledAt ? scheduledAt.toISOString() : undefined
       );
 
@@ -99,7 +98,6 @@ export default function CreatePost({ onPostCreated }: CreatePostProps) {
       setMediaPreviews([]);
       setScheduledAt(null);
     } catch (err: any) {
-      console.error("Post error:", err);
       toast.error("Failed to create post", { description: err?.message });
     } finally {
       setPosting(false);
@@ -122,21 +120,28 @@ export default function CreatePost({ onPostCreated }: CreatePostProps) {
             value={content}
             onChange={(e) => setContent(e.target.value.slice(0, maxChars))}
             placeholder="What's on your mind?"
-            className="w-full bg-transparent text-foreground placeholder:text-muted-foreground resize-none outline-none text-sm min-h-[80px]"
+            className="w-full bg-transparent text-foreground placeholder:text-muted-foreground resize-none outline-none text-sm min-h-[80px] leading-relaxed"
             rows={3}
           />
 
           {mediaPreviews.length > 0 && (
-            <div className="flex gap-2 mt-2 flex-wrap">
-              {mediaPreviews.map((src, i) => (
-                <div key={i} className="relative h-20 w-20 rounded-lg overflow-hidden">
-                  <img src={src} alt="" className="h-full w-full object-cover" />
+            <div className={`grid gap-1.5 mt-2 ${mediaPreviews.length > 1 ? "grid-cols-2" : "grid-cols-1"}`}>
+              {mediaPreviews.map(({ url, type }, i) => (
+                <div key={i} className="relative rounded-xl overflow-hidden bg-muted aspect-video">
+                  {type === "video" ? (
+                    <video src={url} className="h-full w-full object-cover" muted playsInline />
+                  ) : (
+                    <img src={url} alt="" className="h-full w-full object-cover" />
+                  )}
                   <button
                     onClick={() => removeMedia(i)}
-                    className="absolute top-1 right-1 h-5 w-5 bg-background/80 rounded-full flex items-center justify-center"
+                    className="absolute top-1.5 right-1.5 h-6 w-6 bg-black/60 rounded-full flex items-center justify-center hover:bg-black/80 transition-colors"
                   >
-                    <X className="h-3 w-3" />
+                    <X className="h-3 w-3 text-white" />
                   </button>
+                  {type === "video" && (
+                    <div className="absolute bottom-1.5 left-1.5 px-1.5 py-0.5 bg-black/60 rounded text-[10px] text-white font-medium">VIDEO</div>
+                  )}
                 </div>
               ))}
             </div>
@@ -145,23 +150,34 @@ export default function CreatePost({ onPostCreated }: CreatePostProps) {
           {/* Actions bar */}
           <div className="flex items-center justify-between mt-3 pt-3 border-t border-border">
             <div className="flex items-center gap-0.5">
-              <input ref={fileInputRef} type="file" accept="image/*,video/*" multiple className="hidden" onChange={handleFileSelect} />
-              <Button variant="ghost" size="sm" className="text-primary h-8 px-2" onClick={() => fileInputRef.current?.click()}>
+              <input ref={imageInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleFileSelect} />
+              <input ref={videoInputRef} type="file" accept="video/*" className="hidden" onChange={handleFileSelect} />
+
+              <button onClick={() => imageInputRef.current?.click()}
+                className="h-8 w-8 flex items-center justify-center rounded-full text-primary hover:bg-primary/10 transition-colors active:scale-95"
+                title="Add image">
                 <ImagePlus className="h-4 w-4" />
-              </Button>
+              </button>
+              <button onClick={() => videoInputRef.current?.click()}
+                className="h-8 w-8 flex items-center justify-center rounded-full text-primary hover:bg-primary/10 transition-colors active:scale-95"
+                title="Add video">
+                <Video className="h-4 w-4" />
+              </button>
               <EmojiPicker onSelect={handleEmojiSelect} />
               <SchedulePicker scheduledAt={scheduledAt} onSchedule={setScheduledAt} />
-              <span className={`text-xs ml-2 ${remaining < 20 ? "text-destructive" : "text-muted-foreground"}`}>{remaining}</span>
+
+              <span className={`text-xs ml-1 font-mono tabular-nums ${isAtLimit ? "text-destructive font-bold" : isNearLimit ? "text-warning" : "text-muted-foreground"}`}>
+                {remaining}
+              </span>
             </div>
 
-            <Button onClick={handlePost} disabled={!content.trim() || posting} size="sm" className="bg-primary text-primary-foreground hover:bg-secondary font-semibold px-6">
-              {posting ? (
-                <><Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />Posting...</>
-              ) : scheduledAt ? (
-                "Schedule"
-              ) : (
-                "Post"
-              )}
+            <Button
+              onClick={handlePost}
+              disabled={!content.trim() || posting || isAtLimit}
+              size="sm"
+              className="bg-primary text-primary-foreground hover:bg-primary/90 font-semibold px-5 rounded-full"
+            >
+              {posting ? <><Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />Posting...</> : scheduledAt ? "Schedule" : "Post"}
             </Button>
           </div>
         </div>
