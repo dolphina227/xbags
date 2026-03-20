@@ -18,6 +18,7 @@ import SettingsPage from "./pages/SettingsPage";
 import PostDetailPage from "./pages/PostDetailPage";
 import NotFound from "./pages/NotFound";
 import ReferralPage from "./pages/ReferralPage";
+import LeaderboardPage from "./pages/LeaderboardPage";
 
 const queryClient = new QueryClient();
 
@@ -44,6 +45,7 @@ const App = () => (
                 <Route path="/profile/:username" element={<ProfilePage />} />
                 <Route path="/settings" element={<SettingsPage />} />
                 <Route path="/referral" element={<ReferralPage />} />
+                <Route path="/leaderboard" element={<LeaderboardPage />} />
                 <Route path="/post/:postId" element={<PostDetailPage />} />
               </Route>
 
