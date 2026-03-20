@@ -659,8 +659,8 @@ export function PostContent({ content }: PostContentProps) {
   const [hoverState, setHoverState] = useState<{ ticker: string; rect: DOMRect } | null>(null);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Split berdasarkan $TICKER, Solana address, #hashtag, dan @mention
-  const parts = content.split(/(\$[A-Z]{1,10}(?![A-Za-z])|\b[1-9A-HJ-NP-Za-km-z]{32,44}\b|#[a-zA-Z0-9_]{1,30}|@[a-zA-Z0-9_]{1,30})/g);
+  // Split berdasarkan URL, $TICKER, Solana address, #hashtag, dan @mention
+  const parts = content.split(/(https?:\/\/[^\s]+|\$[A-Z]{1,10}(?![A-Za-z])|\b[1-9A-HJ-NP-Za-km-z]{32,44}\b|#[a-zA-Z0-9_]{1,30}|@[a-zA-Z0-9_]{1,30})/g);
 
   const showPopup = useCallback((ticker: string, e: React.MouseEvent) => {
     if (hideTimer.current) clearTimeout(hideTimer.current);
@@ -685,6 +685,21 @@ export function PostContent({ content }: PostContentProps) {
     <>
       <p className="text-sm text-foreground leading-relaxed mt-1 whitespace-pre-wrap break-words">
         {parts.map((part, i) => {
+          // URL — clickable link
+          if (/^https?:\/\/[^\s]+$/.test(part)) {
+            return (
+              <a
+                key={i}
+                href={part}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="text-info hover:underline underline-offset-2 break-all transition-colors"
+              >
+                {part}
+              </a>
+            );
+          }
           // $TICKER — hover popup + klik ke market
           if (/^\$[A-Z]{1,10}$/.test(part)) {
             const ticker = part.slice(1);

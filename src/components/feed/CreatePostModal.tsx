@@ -29,7 +29,8 @@ export default function CreatePostModal({ open, onClose }: CreatePostModalProps)
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const maxChars = 1000;
-  const remaining = maxChars - content.length;
+  const charCount = content.length;
+  const remaining = maxChars - charCount;
   const isNearLimit = remaining < 100;
   const isAtLimit = remaining <= 0;
 
@@ -154,9 +155,14 @@ export default function CreatePostModal({ open, onClose }: CreatePostModalProps)
                     <textarea
                       ref={textareaRef}
                       value={content}
-                      onChange={(e) => setContent(e.target.value.slice(0, maxChars))}
+                      onChange={(e) => {
+                        const val = e.target.value.slice(0, maxChars);
+                        setContent(val);
+                        e.target.style.height = "auto";
+                        e.target.style.height = e.target.scrollHeight + "px";
+                      }}
                       placeholder="What's on your mind?"
-                      className="w-full bg-transparent text-foreground placeholder:text-muted-foreground resize-none outline-none text-base min-h-[160px] leading-relaxed"
+                      className="w-full bg-transparent text-foreground placeholder:text-muted-foreground resize-none outline-none text-base min-h-[160px] leading-relaxed overflow-hidden"
                       autoFocus
                     />
 
@@ -211,7 +217,7 @@ export default function CreatePostModal({ open, onClose }: CreatePostModalProps)
                 {/* Character counter */}
                 <div className="flex items-center gap-2">
                   <span className={`text-xs font-mono tabular-nums ${isAtLimit ? "text-destructive font-bold" : isNearLimit ? "text-warning" : "text-muted-foreground"}`}>
-                    {remaining}
+                    {charCount}/{maxChars}
                   </span>
                   {/* Ring progress */}
                   <svg className="h-5 w-5 -rotate-90" viewBox="0 0 20 20">
