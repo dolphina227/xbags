@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useProfile } from "@/hooks/use-profile";
 
@@ -8,19 +8,43 @@ export interface Notification {
   type: string;
   title: string;
   message: string;
-  data: Record<string, any>;
+  data: Record<string, any> | null;
   read: boolean;
   created_at: string;
 }
 
+// Normalize type dari database ke type yang kita pakai
+function normalizeType(type: string): string {
+  const t = (type || "").toLowerCase();
+  if (t.includes("like")) return "like";
+  if (t.includes("comment") || t.includes("reply")) return "comment";
+  if (t.includes("follow")) return "follow";
+  if (t.includes("mention")) return "mention";
+  if (t.includes("repost")) return "repost";
+  return t;
+}
+
+// Extract nama pengirim dari message notifikasi lama
 // "K E N T H liked your post" → "KENTH"
 // "beryll followed you" → "beryll"
-function extractNameFromMessage(msg: string): string | null {
+// "New Like" (title) + "KENTH liked your post" (message) → "KENTH"
+function extractSenderName(n: Notification): string | null {
+  // Prioritas 1: dari data field
+  if (n.data?.sender_username) return n.data.sender_username;
+
+  // Prioritas 2: parse dari message
+  const msg = (n.message || "").trim();
   if (!msg) return null;
-  const actionWords = ["liked", "followed", "commented", "reposted", "mentioned", "replied"];
+
+  const actionWords = ["liked", "followed", "commented", "reposted", "mentioned", "replied", "on"];
   const words = msg.split(" ");
   const actionIdx = words.findIndex(w => actionWords.includes(w.toLowerCase()));
-  if (actionIdx > 0) return words.slice(0, actionIdx).join("") || null;
+
+  if (actionIdx > 0) {
+    // Gabungkan semua kata sebelum verb (handle spasi antar huruf "K E N T H" → "KENTH")
+    return words.slice(0, actionIdx).join("").trim() || null;
+  }
+
   return words[0] || null;
 }
 
@@ -30,32 +54,35 @@ export function useNotifications() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(false);
 
+  // Gunakan ref agar enrichNotifications tidak recreate terus
   const enrichNotifications = useCallback(async (items: Notification[]): Promise<Notification[]> => {
-    const needEnrich = items.filter(n => !n.data?.sender_avatar_url);
-    if (needEnrich.length === 0) return items;
+    if (items.length === 0) return items;
 
-    // Kumpulkan semua nama yang perlu dicari
+    // Kumpulkan semua nama yang perlu dicari — yang belum punya avatar
+    const toEnrich = items.filter(n => !n.data?.sender_avatar_url);
+    if (toEnrich.length === 0) return items;
+
     const names = new Set<string>();
-    needEnrich.forEach((n) => {
-      if (n.data?.sender_username) {
-        names.add(n.data.sender_username);
-      } else if (n.message) {
-        const name = extractNameFromMessage(n.message);
-        if (name) names.add(name);
-      }
+    toEnrich.forEach(n => {
+      const name = extractSenderName(n);
+      if (name && name.length >= 2) names.add(name);
     });
 
     if (names.size === 0) return items;
 
     const nameList = [...names];
 
-    // Query by username DAN display_name sekaligus
+    // Fetch by username DAN display_name sekaligus
     const [{ data: byUsername }, { data: byDisplayName }] = await Promise.all([
-      supabase.from("profiles").select("username, display_name, avatar_url").in("username", nameList),
-      supabase.from("profiles").select("username, display_name, avatar_url").in("display_name", nameList),
+      supabase.from("profiles")
+        .select("username, display_name, avatar_url")
+        .in("username", nameList),
+      supabase.from("profiles")
+        .select("username, display_name, avatar_url")
+        .in("display_name", nameList),
     ]);
 
-    // Buat lookup map
+    // Build lookup map — case insensitive
     const map = new Map<string, any>();
     [...(byUsername || []), ...(byDisplayName || [])].forEach((p: any) => {
       if (p.username) map.set(p.username.toLowerCase(), p);
@@ -64,23 +91,20 @@ export function useNotifications() {
 
     if (map.size === 0) return items;
 
-    return items.map((n) => {
+    return items.map(n => {
       if (n.data?.sender_avatar_url) return n;
 
-      let p: any = null;
-      if (n.data?.sender_username) {
-        p = map.get(n.data.sender_username.toLowerCase());
-      }
-      if (!p && n.message) {
-        const name = extractNameFromMessage(n.message);
-        if (name) p = map.get(name.toLowerCase());
-      }
+      const name = extractSenderName(n);
+      if (!name) return n;
+
+      const p = map.get(name.toLowerCase());
       if (!p) return n;
 
       return {
         ...n,
+        type: normalizeType(n.type),
         data: {
-          ...n.data,
+          ...(n.data || {}),
           sender_username: p.username,
           sender_avatar_url: p.avatar_url,
         },
@@ -100,10 +124,17 @@ export function useNotifications() {
         .limit(50);
 
       if (error) throw error;
-      const raw = (data || []) as unknown as Notification[];
+
+      // Normalize semua type dulu
+      const raw = (data || []).map((n: any) => ({
+        ...n,
+        type: normalizeType(n.type),
+        data: n.data || {},
+      })) as Notification[];
+
       const enriched = await enrichNotifications(raw);
       setNotifications(enriched);
-      setUnreadCount(enriched.filter((n) => !n.read).length);
+      setUnreadCount(enriched.filter(n => !n.read).length);
     } catch (err) {
       console.error("Failed to fetch notifications:", err);
     } finally {
@@ -115,6 +146,7 @@ export function useNotifications() {
     fetchNotifications();
   }, [fetchNotifications]);
 
+  // Realtime
   useEffect(() => {
     if (!profile?.id) return;
 
@@ -123,13 +155,19 @@ export function useNotifications() {
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "notifications", filter: `user_id=eq.${profile.id}` },
-        (payload) => {
-          const newNotif = payload.new as unknown as Notification;
-          if (newNotif.user_id !== profile.id) return;
-          enrichNotifications([newNotif]).then(([enriched]) => {
-            setNotifications((prev) => [enriched, ...prev]);
-            setUnreadCount((prev) => prev + 1);
-          });
+        async (payload) => {
+          const raw = payload.new as any;
+          if (raw.user_id !== profile.id) return;
+
+          const normalized = {
+            ...raw,
+            type: normalizeType(raw.type),
+            data: raw.data || {},
+          } as Notification;
+
+          const [enriched] = await enrichNotifications([normalized]);
+          setNotifications(prev => [enriched, ...prev]);
+          setUnreadCount(prev => prev + 1);
         }
       )
       .subscribe();
@@ -138,15 +176,22 @@ export function useNotifications() {
   }, [profile?.id, enrichNotifications]);
 
   const markAsRead = useCallback(async (notificationId: string) => {
-    await supabase.from("notifications").update({ read: true } as any).eq("id", notificationId);
-    setNotifications((prev) => prev.map((n) => (n.id === notificationId ? { ...n, read: true } : n)));
-    setUnreadCount((prev) => Math.max(0, prev - 1));
+    await supabase
+      .from("notifications")
+      .update({ read: true } as any)
+      .eq("id", notificationId);
+    setNotifications(prev => prev.map(n => n.id === notificationId ? { ...n, read: true } : n));
+    setUnreadCount(prev => Math.max(0, prev - 1));
   }, []);
 
   const markAllAsRead = useCallback(async () => {
     if (!profile?.id) return;
-    await supabase.from("notifications").update({ read: true } as any).eq("user_id", profile.id).eq("read", false);
-    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+    await supabase
+      .from("notifications")
+      .update({ read: true } as any)
+      .eq("user_id", profile.id)
+      .eq("read", false);
+    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
     setUnreadCount(0);
   }, [profile?.id]);
 
