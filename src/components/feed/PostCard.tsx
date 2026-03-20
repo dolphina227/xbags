@@ -772,6 +772,7 @@ export default function PostCard({ post, onUpdate, onDelete, index }: PostCardPr
   const [showTipModal, setShowTipModal] = useState(false);
   const [showQuoteModal, setShowQuoteModal] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
 
   // View tracking refs
   const cardRef = useRef<HTMLDivElement>(null);
@@ -968,11 +969,22 @@ export default function PostCard({ post, onUpdate, onDelete, index }: PostCardPr
             {displayPost.media_urls && displayPost.media_urls.length > 0 && (
               <div className="mt-2 rounded-xl overflow-hidden border border-border">
                 {displayPost.media_type === "video" ? (
-                  <video src={displayPost.media_urls[0]} controls className="w-full max-h-80 object-cover" />
+                  <video src={displayPost.media_urls[0]} controls className="w-full max-h-[500px]" />
                 ) : (
                   <div className={`grid gap-0.5 ${displayPost.media_urls.length > 1 ? "grid-cols-2" : "grid-cols-1"}`}>
                     {displayPost.media_urls.map((url, i) => (
-                      <img key={i} src={url} alt="" className="w-full max-h-80 object-cover" loading="lazy" />
+                      <img
+                        key={i}
+                        src={url}
+                        alt=""
+                        className="w-full object-contain bg-black/20 cursor-zoom-in"
+                        style={{ maxHeight: displayPost.media_urls.length > 1 ? "240px" : "560px" }}
+                        loading="lazy"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setLightboxUrl(url);
+                        }}
+                      />
                     ))}
                   </div>
                 )}
@@ -1067,6 +1079,35 @@ export default function PostCard({ post, onUpdate, onDelete, index }: PostCardPr
       {showQuoteModal && (
         <QuoteModal isOpen={showQuoteModal} onClose={() => setShowQuoteModal(false)} onQuote={handleQuote} originalPost={{ content: displayPost.content, author: displayPost.author }} />
       )}
+
+      {/* Lightbox fullscreen */}
+      <AnimatePresence>
+        {lightboxUrl && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[200] flex items-center justify-center bg-black/95 backdrop-blur-sm"
+            onClick={() => setLightboxUrl(null)}
+          >
+            <motion.img
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              src={lightboxUrl}
+              alt=""
+              className="max-w-[95vw] max-h-[95vh] object-contain rounded-lg"
+              onClick={(e) => e.stopPropagation()}
+            />
+            <button
+              onClick={() => setLightboxUrl(null)}
+              className="absolute top-4 right-4 h-10 w-10 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 transition-colors"
+            >
+              <X className="h-5 w-5 text-white" />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </>
   );
 }
