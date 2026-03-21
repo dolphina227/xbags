@@ -2,10 +2,11 @@ import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Gift, Copy, Check, Users, Star, Twitter, Send,
-  Heart, Repeat2, ExternalLink, ChevronRight, Zap, Trophy
+  Heart, Repeat2, ChevronRight, Zap, Trophy
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useProfile } from "@/hooks/use-profile";
+import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -27,6 +28,16 @@ interface Quest {
   type: "social" | "platform";
 }
 
+interface LeaderboardEntry {
+  rank: number;
+  user_id: string;
+  username: string | null;
+  display_name: string | null;
+  avatar_url: string | null;
+  total_points: number;
+  total_referrals: number;
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function generateCode(username: string): string {
   const base = (username || "user").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6);
@@ -41,7 +52,7 @@ const QUESTS: Omit<Quest, "completed">[] = [
     description: "Follow our official X account to stay updated",
     points: 1000,
     icon: <Twitter className="h-5 w-5" />,
-    action_url: "https://x.com/xbags_social",
+    action_url: "https://x.com/xbagsocial",
     action_label: "Follow on X",
     type: "social",
   },
@@ -51,7 +62,7 @@ const QUESTS: Omit<Quest, "completed">[] = [
     description: "Join the xBAGS Telegram community",
     points: 1000,
     icon: <Send className="h-5 w-5" />,
-    action_url: "https://t.me/xbags_social",
+    action_url: "https://t.me/xbagsocial",
     action_label: "Join Telegram",
     type: "social",
   },
@@ -61,7 +72,6 @@ const QUESTS: Omit<Quest, "completed">[] = [
     description: "Like any post on xBAGS feed",
     points: 1000,
     icon: <Heart className="h-5 w-5" />,
-    action_url: "https://x.com/xbags_social/status/2034846198780358988?s=20",
     action_label: "Like a Post",
     type: "platform",
   },
@@ -71,7 +81,6 @@ const QUESTS: Omit<Quest, "completed">[] = [
     description: "Repost any post on xBAGS feed",
     points: 1000,
     icon: <Repeat2 className="h-5 w-5" />,
-    action_url: "https://x.com/xbags_social/status/2034846198780358988?s=20",
     action_label: "Go to Feed",
     type: "platform",
   },
@@ -80,6 +89,7 @@ const QUESTS: Omit<Quest, "completed">[] = [
 // ─── Main Component ───────────────────────────────────────────────────────────
 const ReferralPage = () => {
   const { profile } = useProfile();
+  const navigate = useNavigate();
   const [stats, setStats] = useState<ReferralStats | null>(null);
   const [completedQuests, setCompletedQuests] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
@@ -120,6 +130,47 @@ const ReferralPage = () => {
       setLoading(false);
     }
   }, [profile?.id]);
+
+  const fetchLeaderboard = useCallback(async () => {
+    setLeaderboardLoading(true);
+    try {
+      const { data } = await supabase
+        .from("referrals" as any)
+        .select("user_id, total_points, total_referrals")
+        .order("total_points", { ascending: false })
+        .limit(20);
+
+      if (!data || data.length === 0) { setLeaderboard([]); return; }
+
+      // Fetch profile info untuk semua user
+      const userIds = (data as any[]).map((r) => r.user_id);
+      const { data: profiles } = await supabase
+        .from("profiles")
+        .select("id, username, display_name, avatar_url")
+        .in("id", userIds);
+
+      const profileMap = new Map((profiles || []).map((p: any) => [p.id, p]));
+
+      const entries: LeaderboardEntry[] = (data as any[]).map((r, i) => {
+        const p = profileMap.get(r.user_id) as any;
+        return {
+          rank: i + 1,
+          user_id: r.user_id,
+          username: p?.username || null,
+          display_name: p?.display_name || null,
+          avatar_url: p?.avatar_url || null,
+          total_points: r.total_points || 0,
+          total_referrals: r.total_referrals || 0,
+        };
+      });
+
+      setLeaderboard(entries);
+    } catch {
+      // silent
+    } finally {
+      setLeaderboardLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     fetchData();
@@ -215,11 +266,20 @@ const ReferralPage = () => {
   return (
     <div className="container mx-auto max-w-2xl px-4 py-6 space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-foreground">Referral & Quests</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Earn xBAGS Points — converted to $XBAGS tokens at launch
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">Referral & Quests</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Earn xBAGS Points — converted to $XBAGS tokens at launch
+          </p>
+        </div>
+        <button
+          onClick={() => navigate("/leaderboard")}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-muted/40 border border-border hover:border-warning/40 hover:bg-muted transition-colors text-xs font-semibold text-muted-foreground hover:text-foreground shrink-0"
+        >
+          <Trophy className="h-4 w-4 text-warning" />
+          <span className="hidden sm:inline">Leaderboard</span>
+        </button>
       </div>
 
       {/* Total Points Banner */}

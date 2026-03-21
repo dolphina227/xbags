@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Heart, MessageCircle, UserPlus, Award, Bell, Check, AtSign } from "lucide-react";
 import { useNotifications, Notification } from "@/hooks/use-notifications";
@@ -40,6 +40,14 @@ const NotificationsPage = () => {
   const navigate = useNavigate();
   const { notifications, unreadCount, loading, markAsRead, markAllAsRead } = useNotifications();
   const [activeTab, setActiveTab] = useState<FilterTab>("all");
+
+  // Auto mark all as read saat halaman dibuka
+  useEffect(() => {
+    if (unreadCount > 0) {
+      const timer = setTimeout(() => markAllAsRead(), 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [unreadCount, markAllAsRead]);
 
   const filtered = activeTab === "all"
     ? notifications

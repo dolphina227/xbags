@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Bell, Wallet } from "lucide-react";
+import { Bell, Wallet, MessageSquare } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import xbagsLogo from "@/assets/xbags-logo.png";
 import WalletConnect from "@/components/wallet/WalletConnect";
@@ -23,7 +23,16 @@ const Header = () => {
           onClick={() => navigate("/")}
         />
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1">
+        {/* Messages — mobile only */}
+        <button
+          onClick={() => navigate("/messages")}
+          className="md:hidden relative h-10 w-10 flex items-center justify-center rounded-full hover:bg-muted transition-colors active:scale-95"
+        >
+          <MessageSquare className="h-5 w-5 text-muted-foreground" />
+        </button>
+
+        {/* Notifications */}
         <button
           onClick={() => navigate("/notifications")}
           className="relative h-10 w-10 flex items-center justify-center rounded-full hover:bg-muted transition-colors active:scale-95"
@@ -38,7 +47,7 @@ const Header = () => {
           )}
         </button>
 
-        {/* My Wallet button — desktop only, hanya saat connected */}
+        {/* My Wallet button — desktop only */}
         {status === "connected" ? (
           <button
             onClick={() => setWalletDrawerOpen(true)}
@@ -48,7 +57,9 @@ const Header = () => {
             My Wallet
           </button>
         ) : (
-          <WalletConnect variant="header" />
+          <div className="hidden md:block">
+            <WalletConnect variant="header" />
+          </div>
         )}
       </div>
 

@@ -18,11 +18,11 @@ const AppLayout = () => {
     <div className="dark min-h-screen flex w-full bg-background text-foreground">
       <AppSidebar />
       <div className="flex-1 flex flex-col min-h-screen min-w-0">
-        <div className="md:hidden">
+        <div className="md:hidden sticky top-0 z-50">
           <Header />
         </div>
         <div className="flex-1 flex min-w-0">
-          <main className={`flex-1 min-w-0 pb-20 md:pb-0 w-full ${isMarketPage ? "px-4" : "mx-auto max-w-[640px] px-4"}`}>
+          <main className={`flex-1 min-w-0 pb-24 md:pb-0 w-full ${isMarketPage ? "px-4" : "mx-auto max-w-[640px] px-4"}`}>
             <Outlet />
           </main>
           {showRightSidebar && <RightSidebar />}
