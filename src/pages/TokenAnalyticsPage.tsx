@@ -937,8 +937,8 @@ export default function TokenAnalyticsPage() {
           <Eye className="h-4 w-4 text-primary" />
         </div>
         <div>
-          <h1 className="text-lg font-bold text-foreground tracking-tight">Token Intel</h1>
-          <p className="text-[11px] text-muted-foreground font-mono">AI-powered security & analytics scanner</p>
+          <h1 className="text-lg font-bold text-foreground tracking-tight">Token Analytics</h1>
+          <p className="text-[11px] text-muted-foreground font-mono">powered security & analytics scanner</p>
         </div>
         {result && (
           <div className="ml-auto flex items-center gap-1.5">
@@ -1518,7 +1518,7 @@ export default function TokenAnalyticsPage() {
             {/* Re-scan button */}
             <div className="flex items-center justify-between pt-2">
               <span className="text-[11px] text-muted-foreground font-mono">
-                Data sourced from RugCheck.xyz · DexScreener
+                Data sourced from xbags.social
               </span>
               <button
                 onClick={() => scan(result.meta.mint)}
