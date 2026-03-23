@@ -19,6 +19,7 @@ import PostDetailPage from "./pages/PostDetailPage";
 import NotFound from "./pages/NotFound";
 import ReferralPage from "./pages/ReferralPage";
 import LeaderboardPage from "./pages/LeaderboardPage";
+import TokenAnalyticsPage from "./pages/TokenAnalyticsPage";
 
 const queryClient = new QueryClient();
 
@@ -40,6 +41,7 @@ const App = () => (
               <Route element={<AppLayout />}>
                 <Route path="/feed" element={<FeedPage />} />
                 <Route path="/market" element={<MarketPage />} />
+                <Route path="/analytics" element={<TokenAnalyticsPage />} />
                 <Route path="/notifications" element={<NotificationsPage />} />
                 <Route path="/messages" element={<MessagesPage />} />
                 <Route path="/profile/:username" element={<ProfilePage />} />

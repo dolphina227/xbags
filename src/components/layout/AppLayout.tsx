@@ -7,7 +7,7 @@ import RightSidebar from "./RightSidebar";
 const AppLayout = () => {
   const location = useLocation();
   // Show right sidebar on feed-related pages (desktop only)
-  const showRightSidebar = ["/feed", "/", "/notifications", "/messages", "/referral", "/leaderboard", "/settings"].includes(location.pathname)
+  const showRightSidebar = ["/feed", "/", "/notifications", "/messages", "/referral", "/leaderboard", "/settings", "/analytics"].includes(location.pathname)
     || location.pathname.startsWith("/post/")
     || location.pathname.startsWith("/profile/");
 
