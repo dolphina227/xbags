@@ -2,13 +2,47 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
-  Search, TrendingUp, Sparkles, Globe,
-  ArrowUp, ArrowDown, RefreshCw, Loader2, History, X,
+  Search, Globe,
+  ArrowUp, ArrowDown, RefreshCw, Loader2, X, Flame,
+  Coins, Sparkles, Zap, TrendingUp,
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import TokenDetail from "@/components/market/TokenDetail";
+import bagsfmLogo  from "@/assets/bagsfm-logo.png";
+import pumpfunLogo from "@/assets/pumpfun-logo.png";
+import bonkfunLogo from "@/assets/bonkfun-logo.png";
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const MARKET_URL = import.meta.env.VITE_MARKET_SUPABASE_URL as string;
+const MARKET_KEY = import.meta.env.VITE_MARKET_SUPABASE_ANON_KEY as string;
+const CACHE_TTL        = 10_000;
+const AUTO_REFRESH     = 30_000;
+const PUMP_AUTO_REFRESH = 20_000;
+const TOKEN_HISTORY_KEY = "xbags_token_history";
+const MAX_TOKEN_HISTORY = 20;
+const PUMP_TARGET_SOL   = 85;
+
+// ─── API Helpers ──────────────────────────────────────────────────────────────
+
+async function invokeMarket(body: Record<string, unknown>) {
+  const res = await fetch(`${MARKET_URL}/functions/v1/fetch-tokens`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${MARKET_KEY}`,
+      "apikey": MARKET_KEY,
+    },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!res.ok) throw new Error(`fetch-tokens ${res.status}: ${await res.text().catch(() => "")}`);
+  return res.json();
+}
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 interface Token {
   tokenAddress: string;
@@ -16,12 +50,7 @@ interface Token {
   name: string;
   symbol: string | null;
   priceUsd: string | null;
-  priceChange: {
-    m5?: number | null;
-    h1?: number | null;
-    h6?: number | null;
-    h24?: number | null;
-  } | null;
+  priceChange: { m5?: number|null; h1?: number|null; h6?: number|null; h24?: number|null } | null;
   marketCap: number | null;
   fdv?: number | null;
   volume24h?: number | null;
@@ -29,29 +58,77 @@ interface Token {
   pairCreatedAt?: number | null;
   boostAmount?: number;
   url?: string;
+  twitter?: string | null;
+  website?: string | null;
+  description?: string | null;
+  status?: string | null;
+  migrated?: boolean;
+  bondingProgress?: number | null;
+  quoteReserveSol?: number | null;
 }
 
-type TabKey = "new" | "trending" | "all" | "history";
-type Timeframe = "5m" | "1h" | "6h" | "24h";
+interface PumpToken {
+  tokenAddress: string;
+  name: string;
+  symbol: string;
+  icon: string | null;
+  priceUsd: string | null;
+  priceChange?: { m5?: number|null; h1?: number|null; h6?: number|null; h24?: number|null } | null;
+  marketCap: number | null;
+  fdv: number | null;
+  liquidity: number | null;
+  bondingCurve: number | null;
+  graduated: boolean;
+  createdAt: string | null;
+  graduatedAt: string | null;
+  volume24h?: number | null;
+  txns24h?: number | null;
+  holders?: number | null;
+  url?: string | null;
+  vSolInBondingCurve?: number | null;
+  isLive?: boolean;
+  seenAt?: number;
+}
+
+interface BonkToken {
+  tokenAddress: string;
+  name: string;
+  symbol: string;
+  icon: string | null;
+  priceUsd: string | null;
+  priceChange: { m5?: number|null; h1?: number|null; h6?: number|null; h24?: number|null } | null;
+  marketCap: number | null;
+  fdv: number | null;
+  liquidity: number | null;
+  volume24h: number | null;
+  pairCreatedAt: number | null;
+  bondingCurve: number | null;
+  graduated: boolean;
+  url?: string;
+}
+
+type TabKey      = "bags" | "pump" | "bonk" | "trending" | "all" | "history";
+type BagsSubTab  = "new" | "bonding" | "migrated";
+type PumpTab     = "new" | "bonding" | "graduated";
+type BonkTab     = "new" | "bonding" | "migrated";
+type Timeframe   = "5m" | "1h" | "6h" | "24h";
+
+// ─── Tab Definitions ──────────────────────────────────────────────────────────
 
 const TABS = [
-  { key: "new" as TabKey, label: "New", icon: Sparkles },
-  { key: "trending" as TabKey, label: "Trending", icon: TrendingUp },
-  { key: "all" as TabKey, label: "All Tokens", icon: Globe },
-  { key: "history" as TabKey, label: "History", icon: History },
-] as const;
-
-const TIMEFRAMES: { key: Timeframe; label: string }[] = [
-  { key: "5m", label: "5m" },
-  { key: "1h", label: "1h" },
-  { key: "6h", label: "6h" },
-  { key: "24h", label: "24h" },
+  { key: "bags"     as TabKey, label: "Bags.fm",    logo: bagsfmLogo,  icon: null,       activeClass: "bg-primary/10 text-primary border-primary/40" },
+  { key: "pump"     as TabKey, label: "Pump.fun",   logo: pumpfunLogo, icon: null,       activeClass: "bg-emerald-900/40 text-emerald-400 border-emerald-500/40" },
+  { key: "bonk"     as TabKey, label: "Bonk.fun",   logo: bonkfunLogo, icon: null,       activeClass: "bg-orange-500/10 text-orange-400 border-orange-400/40" },
+  { key: "trending" as TabKey, label: "Trending",   logo: null, icon: TrendingUp,        activeClass: "bg-warning/10 text-warning border-warning/40" },
+  { key: "all"      as TabKey, label: "All Tokens", logo: null, icon: Globe,             activeClass: "bg-secondary/10 text-secondary border-secondary/40" },
+  { key: "history"  as TabKey, label: "History",    logo: null, icon: Coins,             activeClass: "bg-muted text-foreground border-border" },
 ];
 
-const CACHE_TTL = 10_000;
-const AUTO_REFRESH = 30_000;
-const TOKEN_HISTORY_KEY = "xbags_token_history";
-const MAX_TOKEN_HISTORY = 20;
+const TIMEFRAMES: { key: Timeframe }[] = [
+  { key: "5m" }, { key: "1h" }, { key: "6h" }, { key: "24h" },
+];
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatPrice(p: string | null): string {
   if (!p) return "—";
@@ -63,29 +140,25 @@ function formatPrice(p: string | null): string {
   if (n >= 0.01) return `$${n.toFixed(5)}`;
   const fixed = n.toFixed(12);
   const match = fixed.match(/^0\.(0*)([1-9]\d{0,3})/);
-  if (match) {
-    const totalDecimals = match[1].length + match[2].length;
-    return `$${n.toFixed(Math.min(totalDecimals + 1, 10))}`;
-  }
+  if (match) return `$${n.toFixed(Math.min(match[1].length + match[2].length + 1, 10))}`;
   return `$${n.toExponential(2)}`;
 }
 
 function formatMcap(m: number | null | undefined): string {
   if (!m || m <= 0) return "N/A";
   if (m >= 1_000_000_000) return `$${(m / 1_000_000_000).toFixed(2)}B`;
-  if (m >= 1_000_000) return `$${(m / 1_000_000).toFixed(1)}M`;
-  if (m >= 1_000) return `$${(m / 1_000).toFixed(0)}K`;
+  if (m >= 1_000_000)     return `$${(m / 1_000_000).toFixed(1)}M`;
+  if (m >= 1_000)         return `$${(m / 1_000).toFixed(0)}K`;
   return `$${m.toFixed(0)}`;
 }
 
 function getChange(token: Token, tf: Timeframe): number | null {
   if (!token.priceChange) return null;
   switch (tf) {
-    case "5m": return token.priceChange.m5 ?? null;
-    case "1h": return token.priceChange.h1 ?? null;
-    case "6h": return token.priceChange.h6 ?? null;
+    case "5m":  return token.priceChange.m5  ?? null;
+    case "1h":  return token.priceChange.h1  ?? null;
+    case "6h":  return token.priceChange.h6  ?? null;
     case "24h": return token.priceChange.h24 ?? null;
-    default: return null;
   }
 }
 
@@ -102,40 +175,384 @@ function TableHeader() {
   );
 }
 
+function TokenIcon({ icon, symbol, name }: { icon: string | null; symbol?: string | null; name?: string }) {
+  return (
+    <div className="w-8 h-8 rounded-full overflow-hidden bg-card border border-border flex items-center justify-center shrink-0">
+      {icon ? (
+        <img src={icon} alt="" className="w-full h-full object-cover" loading="lazy"
+          onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
+      ) : (
+        <span className="text-[10px] font-bold text-primary">
+          {(symbol || name || "?").slice(0, 2).toUpperCase()}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function TokenAvatar({ icon, symbol, color = "text-primary" }: { icon: string | null; symbol: string; color?: string }) {
+  return (
+    <div className="w-9 h-9 rounded-xl overflow-hidden bg-muted border border-border flex items-center justify-center shrink-0">
+      {icon ? (
+        <img src={icon} alt="" className="w-full h-full object-cover" loading="lazy"
+          onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
+      ) : (
+        <span className={`text-[10px] font-bold ${color}`}>
+          {symbol.slice(0, 2).toUpperCase()}
+        </span>
+      )}
+    </div>
+  );
+}
+
+// ─── Main Component ───────────────────────────────────────────────────────────
+
 export default function MarketPage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [activeTab, setActiveTab] = useState<TabKey>("new");
-  const [tokens, setTokens] = useState<Token[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [search, setSearch] = useState("");
-  const [selectedToken, setSelectedToken] = useState<Token | null>(null);
+  const [activeTab, setActiveTab] = useState<TabKey>("bags");
 
-  // Search tokens via edge function (same as home sidebar)
-  const [searchTokenResults, setSearchTokenResults] = useState<Token[]>([]);
+  // ── Bags.fm state ──────────────────────────────────────────────────────────
+  const [bagsSubTab, setBagsSubTab]     = useState<BagsSubTab>("new");
+  const [bagsTokens, setBagsTokens]     = useState<Token[]>([]);
+  const [bagsLoading, setBagsLoading]   = useState(true);
+  const [bagsError, setBagsError]       = useState<string | null>(null);
+  const [bagsTfNew, setBagsTfNew]       = useState<Timeframe>("1h");
+  const bagsCache = useRef<Map<string, { data: Token[]; ts: number }>>(new Map());
+
+  const fetchBags = useCallback(async (tab: BagsSubTab, tf: Timeframe, silent = false) => {
+    const cacheKey = `bags-${tab}-${tf}`;
+    const cached   = bagsCache.current.get(cacheKey);
+    if (cached && Date.now() - cached.ts < CACHE_TTL) {
+      setBagsTokens(cached.data);
+      return;
+    }
+    if (!silent) setBagsLoading(true);
+    setBagsError(null);
+    try {
+      const data = await invokeMarket({ type: "bags", bagsTab: tab, timeframe: tf });
+      if (!data?.success) throw new Error(data?.error || "Fetch failed");
+      const result: Token[] = data.tokens ?? [];
+      bagsCache.current.set(cacheKey, { data: result, ts: Date.now() });
+      setBagsTokens(result);
+    } catch (err: any) {
+      setBagsError(err.message || "Failed to load Bags.fm data");
+    } finally {
+      setBagsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === "bags") fetchBags(bagsSubTab, bagsTfNew);
+  }, [activeTab, bagsSubTab, bagsTfNew, fetchBags]);
+
+  useEffect(() => {
+    if (activeTab !== "bags") return;
+    const id = setInterval(() => fetchBags(bagsSubTab, bagsTfNew, true), AUTO_REFRESH);
+    return () => clearInterval(id);
+  }, [activeTab, bagsSubTab, bagsTfNew, fetchBags]);
+
+  // ── Pump.fun state ─────────────────────────────────────────────────────────
+  const [pumpTab, setPumpTab]       = useState<PumpTab>("new");
+  const [pumpTokens, setPumpTokens] = useState<PumpToken[]>([]);
+  const [pumpLoading, setPumpLoading] = useState(false);
+  const [pumpError, setPumpError]   = useState<string | null>(null);
+  const pumpCache = useRef<Map<string, { data: PumpToken[]; ts: number }>>(new Map());
+
+  // PumpPortal WebSocket — real-time bonding curve
+  const ppBcMap   = useRef<Map<string, number>>(new Map());
+  const ppGradSet = useRef<Set<string>>(new Set());
+  const ppWsRef   = useRef<WebSocket | null>(null);
+  const [ppWsStatus, setPpWsStatus] = useState<"connecting"|"connected"|"disconnected">("disconnected");
+  const [ppTick, setPpTick]         = useState(0);
+
+  const fetchPump = useCallback(async (tab: PumpTab, silent = false) => {
+    const cacheKey = `pump-${tab}`;
+    const cached   = pumpCache.current.get(cacheKey);
+    if (cached && Date.now() - cached.ts < 15_000) {
+      setPumpTokens(cached.data);
+      return;
+    }
+    if (!silent) setPumpLoading(true);
+    setPumpError(null);
+    try {
+      const data = await invokeMarket({ type: "pump", pumpTab: tab });
+      if (!data?.success) throw new Error(data?.error || "Fetch failed");
+      let result: PumpToken[] = (data.tokens ?? []).map((t: any) => ({
+        tokenAddress: t.tokenAddress,
+        name:         t.name     || "Unknown",
+        symbol:       t.symbol   || "???",
+        icon:         t.icon     || null,
+        priceUsd:     t.priceUsd || null,
+        priceChange:  t.priceChange || null,
+        marketCap:    t.marketCap ? Number(t.marketCap) : null,
+        fdv:          t.fdv       ? Number(t.fdv)       : null,
+        liquidity:    t.liquidity ? Number(t.liquidity) : null,
+        bondingCurve: t.bondingCurve != null ? Number(t.bondingCurve) : null,
+        graduated:    t.graduated ?? false,
+        createdAt:    null,
+        graduatedAt:  t.graduatedAt || null,
+        volume24h:    t.volume24h ? Number(t.volume24h) : null,
+        txns24h:      t.txns24h  ? Number(t.txns24h)   : null,
+        url:          t.url || null,
+      }));
+      // Double-filter frontend bonding
+      if (tab === "bonding") {
+        result = result.filter(t => {
+          const bc = t.bondingCurve ?? 0;
+          if (bc < 20 || bc >= 99) return false;
+          if (t.graduatedAt != null) return false;
+          if (t.graduated === true) return false;
+          return true;
+        });
+        result.sort((a, b) => (b.bondingCurve ?? 0) - (a.bondingCurve ?? 0));
+      }
+      pumpCache.current.set(cacheKey, { data: result, ts: Date.now() });
+      setPumpTokens(result);
+    } catch (err: any) {
+      setPumpError(err.message || "Failed to load Pump.fun data");
+    } finally {
+      setPumpLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === "pump") fetchPump(pumpTab);
+  }, [activeTab, pumpTab, fetchPump]);
+
+  useEffect(() => {
+    if (activeTab !== "pump") return;
+    const id = setInterval(() => fetchPump(pumpTab, true), PUMP_AUTO_REFRESH);
+    return () => clearInterval(id);
+  }, [activeTab, pumpTab, fetchPump]);
+
+  // PumpPortal WebSocket
+  const connectPpWs = useCallback((addresses: string[]) => {
+    if (ppWsRef.current) { ppWsRef.current.close(); ppWsRef.current = null; }
+    if (!addresses.length) return;
+    setPpWsStatus("connecting");
+    try {
+      const ws = new WebSocket("wss://pumpportal.fun/api/data");
+      ppWsRef.current = ws;
+      ws.onopen = () => {
+        setPpWsStatus("connected");
+        ws.send(JSON.stringify({ method: "subscribeTokenTrade", keys: addresses }));
+      };
+      ws.onmessage = (evt) => {
+        try {
+          const d = JSON.parse(evt.data);
+          if (!d?.mint || d.vSolInBondingCurve == null) return;
+          const vSol = Number(d.vSolInBondingCurve);
+          const bc   = Math.min((vSol / PUMP_TARGET_SOL) * 100, 100);
+          if (bc >= 100) {
+            ppGradSet.current.add(d.mint);
+            ppBcMap.current.delete(d.mint);
+          } else {
+            ppBcMap.current.set(d.mint, bc);
+          }
+          setPpTick(t => t + 1);
+        } catch { /* skip */ }
+      };
+      ws.onerror = () => setPpWsStatus("disconnected");
+      ws.onclose = () => setPpWsStatus("disconnected");
+    } catch { setPpWsStatus("disconnected"); }
+  }, []);
+
+  const disconnectPpWs = useCallback(() => {
+    ppWsRef.current?.close();
+    ppWsRef.current = null;
+    setPpWsStatus("disconnected");
+  }, []);
+
+  useEffect(() => {
+    if (activeTab !== "pump" || pumpTab !== "bonding") return;
+    if (pumpTokens.length === 0) return;
+    ppBcMap.current.clear();
+    ppGradSet.current.clear();
+    connectPpWs(pumpTokens.map(t => t.tokenAddress));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pumpTokens, activeTab, pumpTab]);
+
+  useEffect(() => {
+    if (activeTab === "pump" && pumpTab === "bonding") return;
+    disconnectPpWs();
+  }, [activeTab, pumpTab, disconnectPpWs]);
+
+  useEffect(() => () => { disconnectPpWs(); }, [disconnectPpWs]);
+
+  // ── Bonk.fun state ─────────────────────────────────────────────────────────
+  const [bonkTab, setBonkTab]       = useState<BonkTab>("new");
+  const [bonkTokens, setBonkTokens] = useState<BonkToken[]>([]);
+  const [bonkLoading, setBonkLoading] = useState(false);
+  const [bonkError, setBonkError]   = useState<string | null>(null);
+  const bonkCache = useRef<Map<string, { data: BonkToken[]; ts: number }>>(new Map());
+
+  const fetchBonk = useCallback(async (tab: BonkTab, silent = false) => {
+    const cacheKey = `bonk-${tab}`;
+    const cached   = bonkCache.current.get(cacheKey);
+    if (cached && Date.now() - cached.ts < 15_000) {
+      setBonkTokens(cached.data);
+      return;
+    }
+    if (!silent) setBonkLoading(true);
+    setBonkError(null);
+    try {
+      const data = await invokeMarket({ type: "bonk", bonkTab: tab });
+      if (!data?.success) throw new Error(data?.error || "Bonk fetch failed");
+      const tokens: BonkToken[] = (data.tokens ?? []).map((t: any): BonkToken => ({
+        tokenAddress: t.tokenAddress,
+        name:         t.name        || "Unknown",
+        symbol:       t.symbol      || "???",
+        icon:         t.icon        || null,
+        priceUsd:     t.priceUsd    || null,
+        priceChange:  t.priceChange || null,
+        marketCap:    t.marketCap   ? Number(t.marketCap)  : null,
+        fdv:          t.fdv         ? Number(t.fdv)         : null,
+        liquidity:    t.liquidity   ? Number(t.liquidity)   : null,
+        volume24h:    t.volume24h   ? Number(t.volume24h)   : null,
+        pairCreatedAt: t.pairCreatedAt || null,
+        bondingCurve: t.bondingCurve != null ? Number(t.bondingCurve) : null,
+        graduated:    t.graduated   ?? false,
+        url:          t.url || `https://letsbonk.fun/token/${t.tokenAddress}`,
+      }));
+      bonkCache.current.set(cacheKey, { data: tokens, ts: Date.now() });
+      setBonkTokens(tokens);
+    } catch (err: any) {
+      setBonkError(err.message || "Failed to load Bonk.fun data");
+    } finally {
+      setBonkLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === "bonk") fetchBonk(bonkTab);
+  }, [activeTab, bonkTab, fetchBonk]);
+
+  useEffect(() => {
+    if (activeTab !== "bonk") return;
+    const id = setInterval(() => fetchBonk(bonkTab, true), 15_000);
+    return () => clearInterval(id);
+  }, [activeTab, bonkTab, fetchBonk]);
+
+  // ── All Tokens state ───────────────────────────────────────────────────────
+  const [allTokens, setAllTokens]     = useState<Token[]>([]);
+  const [allLoading, setAllLoading]   = useState(false);
+  const [allError, setAllError]       = useState<string | null>(null);
+  const [tfAll, setTfAll]             = useState<Timeframe>("24h");
+  const allCache = useRef<Map<string, { data: Token[]; ts: number }>>(new Map());
+
+  const fetchAll = useCallback(async (tf: Timeframe, silent = false) => {
+    const cacheKey = `all-${tf}`;
+    const cached   = allCache.current.get(cacheKey);
+    if (cached && Date.now() - cached.ts < CACHE_TTL) {
+      setAllTokens(cached.data);
+      return;
+    }
+    if (!silent) setAllLoading(true);
+    setAllError(null);
+    try {
+      const data = await invokeMarket({ type: "all" });
+      if (!data?.success) throw new Error(data?.error || "Fetch failed");
+      const result: Token[] = data.tokens ?? [];
+      allCache.current.set(cacheKey, { data: result, ts: Date.now() });
+      setAllTokens(result);
+    } catch (err: any) {
+      setAllError("Failed to load data. Try again.");
+    } finally {
+      setAllLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === "all") fetchAll(tfAll);
+  }, [activeTab, tfAll, fetchAll]);
+
+  useEffect(() => {
+    if (activeTab !== "all") return;
+    const id = setInterval(() => fetchAll(tfAll, true), AUTO_REFRESH);
+    return () => clearInterval(id);
+  }, [activeTab, tfAll, fetchAll]);
+
+  // ── Trending state ─────────────────────────────────────────────────────────
+  const [trendingTokens, setTrendingTokens]   = useState<Token[]>([]);
+  const [trendingLoading, setTrendingLoading] = useState(false);
+  const [trendingError, setTrendingError]     = useState<string | null>(null);
+  const [tfTrend, setTfTrend]                 = useState<Timeframe>("1h");
+  const trendingCache = useRef<Map<string, { data: Token[]; ts: number }>>(new Map());
+
+  const fetchTrending = useCallback(async (tf: Timeframe, silent = false) => {
+    const cacheKey = `trending-${tf}`;
+    const cached   = trendingCache.current.get(cacheKey);
+    if (cached && Date.now() - cached.ts < CACHE_TTL) {
+      setTrendingTokens(cached.data);
+      return;
+    }
+    if (!silent) setTrendingLoading(true);
+    setTrendingError(null);
+    try {
+      const data = await invokeMarket({ type: "bags", bagsTab: "trending", timeframe: tf });
+      if (!data?.success) throw new Error(data?.error || "Fetch failed");
+      const result: Token[] = data.tokens ?? [];
+      trendingCache.current.set(cacheKey, { data: result, ts: Date.now() });
+      setTrendingTokens(result);
+    } catch (err: any) {
+      setTrendingError(err?.message || "Failed to load trending data.");
+    } finally {
+      setTrendingLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === "trending") fetchTrending(tfTrend);
+  }, [activeTab, tfTrend, fetchTrending]);
+
+  useEffect(() => {
+    if (activeTab !== "trending") return;
+    const id = setInterval(() => fetchTrending(tfTrend, true), AUTO_REFRESH);
+    return () => clearInterval(id);
+  }, [activeTab, tfTrend, fetchTrending]);
+
+  // ── Search state ───────────────────────────────────────────────────────────
+  const [search, setSearch]             = useState("");
+  const [searchResults, setSearchResults] = useState<Token[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Token history — simpan detail token yang pernah dibuka
+  useEffect(() => {
+    if (searchTimeout.current) clearTimeout(searchTimeout.current);
+    if (!search.trim() || search.trim().length < 2) {
+      setSearchResults([]);
+      setSearchLoading(false);
+      return;
+    }
+    setSearchLoading(true);
+    searchTimeout.current = setTimeout(async () => {
+      try {
+        const { data } = await supabase.functions.invoke("search-tokens", { body: { query: search.trim() } });
+        if (data?.success && Array.isArray(data.tokens)) setSearchResults(data.tokens);
+        else setSearchResults([]);
+      } catch { setSearchResults([]); }
+      finally { setSearchLoading(false); }
+    }, 500);
+    return () => { if (searchTimeout.current) clearTimeout(searchTimeout.current); };
+  }, [search]);
+
+  // ── Token history ──────────────────────────────────────────────────────────
   const [tokenHistory, setTokenHistory] = useState<Token[]>(() => {
-    try {
-      const raw = localStorage.getItem(TOKEN_HISTORY_KEY);
-      return raw ? JSON.parse(raw) : [];
-    } catch { return []; }
+    try { return JSON.parse(localStorage.getItem(TOKEN_HISTORY_KEY) || "[]"); }
+    catch { return []; }
   });
 
   const addTokenHistory = useCallback((token: Token) => {
     setTokenHistory(prev => {
-      const filtered = prev.filter(t => t.tokenAddress !== token.tokenAddress);
-      const updated = [token, ...filtered].slice(0, MAX_TOKEN_HISTORY);
+      const updated = [token, ...prev.filter(t => t.tokenAddress !== token.tokenAddress)].slice(0, MAX_TOKEN_HISTORY);
       try { localStorage.setItem(TOKEN_HISTORY_KEY, JSON.stringify(updated)); } catch {}
       return updated;
     });
   }, []);
 
-  const removeTokenHistory = useCallback((tokenAddress: string) => {
+  const removeTokenHistory = useCallback((addr: string) => {
     setTokenHistory(prev => {
-      const updated = prev.filter(t => t.tokenAddress !== tokenAddress);
+      const updated = prev.filter(t => t.tokenAddress !== addr);
       try { localStorage.setItem(TOKEN_HISTORY_KEY, JSON.stringify(updated)); } catch {}
       return updated;
     });
@@ -146,128 +563,52 @@ export default function MarketPage() {
     try { localStorage.removeItem(TOKEN_HISTORY_KEY); } catch {}
   }, []);
 
-  // Handle ?token= query param from search
+  // ── ?token= param ──────────────────────────────────────────────────────────
+  const [selectedToken, setSelectedToken] = useState<Token | null>(null);
+
   useEffect(() => {
     const tokenAddr = searchParams.get("token");
     if (tokenAddr && !selectedToken) {
-      supabase.functions.invoke("search-tokens", {
-        body: { query: tokenAddr },
-      }).then(({ data }) => {
+      supabase.functions.invoke("search-tokens", { body: { query: tokenAddr } }).then(({ data }) => {
         if (data?.success && data.tokens?.length > 0) {
-          const token = data.tokens[0];
-          setSelectedToken(token);
-          addTokenHistory(token);
+          setSelectedToken(data.tokens[0]);
+          addTokenHistory(data.tokens[0]);
           setSearchParams({}, { replace: true });
         }
       });
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
-  // Search with edge function when query changes
-  useEffect(() => {
-    if (searchTimeout.current) clearTimeout(searchTimeout.current);
-    if (!search.trim() || search.trim().length < 2) {
-      setSearchTokenResults([]);
-      setSearchLoading(false);
-      return;
-    }
-    setSearchLoading(true);
-    searchTimeout.current = setTimeout(async () => {
-      try {
-        const { data } = await supabase.functions.invoke("search-tokens", {
-          body: { query: search.trim() },
-        });
-        if (data?.success && Array.isArray(data.tokens)) {
-          setSearchTokenResults(data.tokens);
-        } else {
-          setSearchTokenResults([]);
-        }
-      } catch {
-        setSearchTokenResults([]);
-      } finally {
-        setSearchLoading(false);
-      }
-    }, 500);
-    return () => { if (searchTimeout.current) clearTimeout(searchTimeout.current); };
-  }, [search]);
+  // ── Navigation helpers ─────────────────────────────────────────────────────
+  const openToken = useCallback((token: Token) => {
+    addTokenHistory(token);
+    setSelectedToken(token);
+  }, [addTokenHistory]);
 
-  const [tfNew, setTfNew] = useState<Timeframe>("1h");
-  const [tfTrending, setTfTrending] = useState<Timeframe>("1h");
-  const [tfAll, setTfAll] = useState<Timeframe>("24h");
+  const openPumpToken = useCallback((t: PumpToken) => {
+    openToken({
+      tokenAddress: t.tokenAddress, icon: t.icon, name: t.name, symbol: t.symbol,
+      priceUsd: t.priceUsd, priceChange: null, marketCap: t.marketCap || t.fdv, liquidity: t.liquidity,
+    });
+  }, [openToken]);
 
-  const currentTf = activeTab === "new" ? tfNew : activeTab === "trending" ? tfTrending : tfAll;
+  const openBonkToken = useCallback((t: BonkToken) => {
+    openToken({
+      tokenAddress: t.tokenAddress, icon: t.icon, name: t.name, symbol: t.symbol,
+      priceUsd: t.priceUsd, priceChange: t.priceChange, marketCap: t.marketCap || t.fdv,
+      liquidity: t.liquidity, volume24h: t.volume24h, pairCreatedAt: t.pairCreatedAt,
+    });
+  }, [openToken]);
 
-  const setCurrentTf = useCallback(
-    (tf: Timeframe) => {
-      if (activeTab === "new") setTfNew(tf);
-      else if (activeTab === "trending") setTfTrending(tf);
-      else setTfAll(tf);
-    },
-    [activeTab]
-  );
-
-  const cache = useRef<Map<string, { data: Token[]; ts: number }>>(new Map());
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const fetchTokens = useCallback(
-    async (tab: TabKey, tf: Timeframe, silent = false) => {
-      const cacheKey = tab === "all" ? "all" : `${tab}-${tf}`;
-      const cached = cache.current.get(cacheKey);
-      if (cached && Date.now() - cached.ts < CACHE_TTL) {
-        setTokens(cached.data);
-        setLoading(false);
-        return;
-      }
-      if (!silent) setLoading(true);
-      setError(null);
-      try {
-        const { data, error: fnError } = await supabase.functions.invoke("fetch-tokens", {
-          body: { type: tab, timeframe: tab !== "all" ? tf : undefined },
-        });
-        if (fnError) throw new Error(fnError.message);
-        if (!data?.success) throw new Error(data?.error || "Fetch failed");
-        const result: Token[] = data.tokens ?? [];
-        cache.current.set(cacheKey, { data: result, ts: Date.now() });
-        setTokens(result);
-      } catch (err: any) {
-        console.error("fetchTokens error:", err);
-        setError("Failed to load data. Try again.");
-      } finally {
-        setLoading(false);
-      }
-    },
-    []
-  );
-
-  useEffect(() => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      fetchTokens(activeTab, currentTf);
-    }, 500);
-    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
-  }, [activeTab, currentTf, fetchTokens]);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      fetchTokens(activeTab, currentTf, true);
-    }, AUTO_REFRESH);
-    return () => clearInterval(interval);
-  }, [activeTab, currentTf, fetchTokens]);
-
-  // Use search results if searching, otherwise filter local tokens
-  const displayTokens = search.trim().length >= 2
-    ? searchTokenResults
-    : tokens.filter((t) => {
-        if (!search.trim()) return true;
-        const q = search.toLowerCase();
-        return t.name?.toLowerCase().includes(q) || t.symbol?.toLowerCase().includes(q) || t.tokenAddress?.toLowerCase().includes(q);
-      });
-
-  // ── Token Detail View
+  // ── Token Detail View ──────────────────────────────────────────────────────
   if (selectedToken) {
     return <TokenDetail token={selectedToken} onBack={() => setSelectedToken(null)} />;
   }
 
+  const currentBagsTf = bagsTfNew;
+
+  // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className="py-4">
       <h1 className="text-xl font-bold mb-4">Market</h1>
@@ -279,179 +620,1002 @@ export default function MarketPage() {
           type="text"
           placeholder="Search token name, $ticker, or paste address..."
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={e => setSearch(e.target.value)}
           className="w-full bg-card border border-border rounded-xl pl-10 pr-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary transition-colors"
         />
-        {searchLoading && (
-          <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground animate-spin" />
-        )}
+        {searchLoading && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground animate-spin" />}
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-2 mb-3 overflow-x-auto no-scrollbar">
-        {TABS.map((tab) => (
-          <button key={tab.key} onClick={() => setActiveTab(tab.key)}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium transition-colors active:scale-95 whitespace-nowrap shrink-0 ${
-              activeTab === tab.key ? "bg-primary text-primary-foreground" : "bg-card border border-border text-muted-foreground hover:text-foreground"
-            }`}>
-            <tab.icon className="h-4 w-4" />
-            {tab.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Timeframe pills — sembunyikan saat tab history */}
-      {activeTab !== "history" && (
-        <div className="flex gap-1.5 mb-4">
-          {TIMEFRAMES.map((t) => (
-            <button key={t.key} onClick={() => setCurrentTf(t.key)}
-              className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                currentTf === t.key ? "bg-primary/20 text-primary border border-primary/30" : "bg-muted/30 text-muted-foreground border border-transparent hover:text-foreground"
-              }`}>{t.label}</button>
-          ))}
-        </div>
-      )}
-
-      {/* History Tab — detail token yang pernah dibuka */}
-      {activeTab === "history" && (
-        <div>
-          {tokenHistory.length === 0 ? (
-            <div className="text-center py-16">
-              <History className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
-              <p className="text-sm text-muted-foreground">No token history yet</p>
-              <p className="text-xs text-muted-foreground mt-1">Tokens you open will appear here</p>
-            </div>
+      {/* Search results */}
+      {search.trim().length >= 2 && (
+        <div className="mb-4">
+          {searchLoading ? (
+            <div className="flex justify-center py-6"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+          ) : searchResults.length === 0 ? (
+            <p className="text-sm text-center text-muted-foreground py-6">No tokens found</p>
           ) : (
-            <>
-              <div className="flex items-center justify-between mb-2 px-1">
-                <span className="text-xs text-muted-foreground">{tokenHistory.length} tokens</span>
-                <button onClick={clearTokenHistory} className="text-xs text-muted-foreground hover:text-destructive transition-colors">
-                  Clear all
-                </button>
-              </div>
+            <div>
               <TableHeader />
-              {tokenHistory.map((token, i) => {
-                const change = getChange(token, currentTf);
-                const isPositive = (change ?? 0) >= 0;
-                const mcap = token.marketCap || token.fdv || null;
+              {searchResults.map((token, i) => {
+                const change = getChange(token, "24h");
+                const isPos  = (change ?? 0) >= 0;
                 return (
-                  <motion.div key={token.tokenAddress} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.02 }}
-                    className="flex items-center gap-2 py-2.5 px-3 border-b border-border hover:bg-muted/20 active:bg-muted/40 cursor-pointer transition-colors group"
-                    onClick={() => { addTokenHistory(token); setSelectedToken(token); }}>
+                  <motion.div key={token.tokenAddress} initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+                    transition={{ delay: i * 0.02 }} onClick={() => openToken(token)}
+                    className="flex items-center gap-2 py-2.5 px-3 border-b border-border hover:bg-muted/20 cursor-pointer transition-colors">
                     <span className="w-6 text-center text-[10px] text-muted-foreground">{i + 1}</span>
-                    <div className="w-8 h-8 rounded-full overflow-hidden bg-card border border-border flex items-center justify-center shrink-0">
-                      {token.icon ? (
-                        <img src={token.icon} alt="" className="w-full h-full object-cover" loading="lazy"
-                          onError={(e) => { const el = e.currentTarget; el.style.display = "none"; }} />
-                      ) : (
-                        <span className="text-[10px] font-bold text-primary">{(token.symbol || token.name || "?").slice(0, 2).toUpperCase()}</span>
-                      )}
-                    </div>
+                    <TokenIcon icon={token.icon} symbol={token.symbol} name={token.name} />
                     <div className="flex-1 min-w-0">
-                      <span className="text-sm font-semibold text-foreground truncate block">{token.name || "Unknown"}</span>
+                      <span className="text-sm font-semibold text-foreground truncate block">{token.name}</span>
                       <span className="text-[10px] text-muted-foreground">${token.symbol || "???"}</span>
                     </div>
-                    <div className="w-20 text-right"><span className="text-xs font-mono text-foreground">{formatPrice(token.priceUsd)}</span></div>
+                    <div className="w-20 text-right"><span className="text-xs font-mono">{formatPrice(token.priceUsd)}</span></div>
                     <div className="w-16 text-right">
                       {change !== null ? (
-                        <span className={`inline-flex items-center gap-0.5 text-xs font-medium ${isPositive ? "text-success" : "text-destructive"}`}>
-                          {isPositive ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />}
+                        <span className={`inline-flex items-center gap-0.5 text-xs font-medium ${isPos ? "text-success" : "text-destructive"}`}>
+                          {isPos ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />}
                           {Math.abs(change).toFixed(1)}%
                         </span>
                       ) : <span className="text-xs text-muted-foreground">—</span>}
                     </div>
-                    <div className="w-20 text-right hidden sm:block"><span className="text-xs text-muted-foreground">{formatMcap(mcap)}</span></div>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); removeTokenHistory(token.tokenAddress); }}
-                      className="opacity-0 group-hover:opacity-100 transition-opacity ml-1 text-muted-foreground hover:text-destructive shrink-0"
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </button>
+                    <div className="w-20 text-right hidden sm:block"><span className="text-xs text-muted-foreground">{formatMcap(token.marketCap)}</span></div>
                   </motion.div>
                 );
               })}
-            </>
+            </div>
           )}
         </div>
       )}
 
-      {/* Error */}
-      {activeTab !== "history" && error && !loading && (
-        <div className="flex flex-col items-center gap-3 py-12">
-          <p className="text-sm text-muted-foreground">{error}</p>
-          <Button variant="outline" size="sm" onClick={() => fetchTokens(activeTab, currentTf)} className="gap-1.5">
-            <RefreshCw className="h-3.5 w-3.5" /> Retry
-          </Button>
-        </div>
-      )}
+      {search.trim().length < 2 && (
+        <>
+          {/* Platform Tabs */}
+          <div className="flex gap-1.5 mb-4 overflow-x-auto no-scrollbar">
+            {TABS.map(tab => {
+              const isActive = activeTab === tab.key;
+              return (
+                <button key={tab.key} onClick={() => setActiveTab(tab.key)}
+                  className={`flex items-center gap-1.5 px-3 py-2 rounded-full text-sm font-medium transition-all active:scale-95 whitespace-nowrap shrink-0 border ${
+                    isActive ? tab.activeClass : "bg-card border-border text-muted-foreground hover:text-foreground hover:border-primary/20"
+                  }`}>
+                  {tab.logo ? (
+                    <img src={tab.logo} alt={tab.label} className={`h-5 w-5 rounded-full object-cover shrink-0 ${isActive ? "opacity-100" : "opacity-60"}`} />
+                  ) : tab.icon ? <tab.icon className="h-4 w-4 shrink-0" /> : null}
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
 
-      {/* Loading */}
-      {activeTab !== "history" && loading && tokens.length === 0 && !error && (
-        <div>
-          <TableHeader />
-          {[...Array(7)].map((_, i) => (
-            <div key={i} className="flex items-center gap-2 py-2.5 px-3 border-b border-border">
-              <Skeleton className="w-6 h-4" />
-              <Skeleton className="w-8 h-8 rounded-full" />
-              <div className="flex-1 space-y-1"><Skeleton className="h-3.5 w-24" /><Skeleton className="h-3 w-14" /></div>
-              <Skeleton className="w-16 h-4" />
-              <Skeleton className="w-14 h-4" />
-              <Skeleton className="w-16 h-4 hidden sm:block" />
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Empty */}
-      {activeTab !== "history" && !loading && !error && displayTokens.length === 0 && (
-        <div className="text-center py-12">
-          <p className="text-sm text-muted-foreground">No tokens found</p>
-        </div>
-      )}
-
-      {/* Token list */}
-      {activeTab !== "history" && !error && displayTokens.length > 0 && (
-        <div>
-          <TableHeader />
-          {displayTokens.map((token, i) => {
-            const change = getChange(token, currentTf);
-            const isPositive = (change ?? 0) >= 0;
-            const mcap = token.marketCap || token.fdv || null;
-            const showNewBadge = activeTab === "new" && !!token.pairCreatedAt && Date.now() - token.pairCreatedAt < 3_600_000;
-            return (
-              <motion.div key={token.tokenAddress} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.02 }}
-                onClick={() => { addTokenHistory(token); setSelectedToken(token); }}
-                className="flex items-center gap-2 py-2.5 px-3 border-b border-border hover:bg-muted/20 active:bg-muted/40 cursor-pointer transition-colors">
-                <span className="w-6 text-center text-[10px] text-muted-foreground">{i + 1}</span>
-                <div className="w-8 h-8 rounded-full overflow-hidden bg-card border border-border flex items-center justify-center shrink-0">
-                  {token.icon ? (
-                    <img src={token.icon} alt="" className="w-full h-full object-cover" loading="lazy"
-                      onError={(e) => { const el = e.currentTarget; el.style.display = "none"; }} />
-                  ) : (
-                    <span className="text-[10px] font-bold text-primary">{(token.symbol || token.name || "?").slice(0, 2).toUpperCase()}</span>
-                  )}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-sm font-semibold text-foreground truncate">{token.name || "Unknown"}</span>
-                    {showNewBadge && <span className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-primary/20 text-primary uppercase">NEW</span>}
+          {/* ══════════════════════════════════════════════════════════
+              BAGS.FM TAB
+          ══════════════════════════════════════════════════════════ */}
+          {activeTab === "bags" && (
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <img src={bagsfmLogo} alt="Bags.fm" className="h-7 w-7 rounded-full object-cover" />
+                  <div>
+                    <span className="text-sm font-bold text-foreground">Bags.fm</span>
+                    <span className="text-xs text-muted-foreground ml-2">Solana Token Launchpad</span>
                   </div>
-                  <span className="text-[10px] text-muted-foreground">${token.symbol || "???"}</span>
                 </div>
-                <div className="w-20 text-right"><span className="text-xs font-mono text-foreground">{formatPrice(token.priceUsd)}</span></div>
-                <div className="w-16 text-right">
-                  {change !== null ? (
-                    <span className={`inline-flex items-center gap-0.5 text-xs font-medium ${isPositive ? "text-success" : "text-destructive"}`}>
-                      {isPositive ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />}
-                      {Math.abs(change).toFixed(1)}%
+                <button onClick={() => { bagsCache.current.clear(); fetchBags(bagsSubTab, currentBagsTf); }}
+                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors">
+                  <RefreshCw className="h-3 w-3" /> Refresh
+                </button>
+              </div>
+
+              <div className="flex gap-1 mb-4 p-1 bg-muted/40 rounded-xl">
+                {([
+                  { key: "new"      as BagsSubTab, label: "New",           icon: "✦" },
+                  { key: "bonding"  as BagsSubTab, label: "Almost Bonded", icon: "◈" },
+                  { key: "migrated" as BagsSubTab, label: "Migrated",      icon: "◉" },
+                ] as const).map(t => (
+                  <button key={t.key} onClick={() => setBagsSubTab(t.key)}
+                    className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold transition-all ${
+                      bagsSubTab === t.key ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                    }`}>
+                    <span className="text-[10px] opacity-70">{t.icon}</span>{t.label}
+                  </button>
+                ))}
+              </div>
+
+              {bagsSubTab === "new" && (
+                <div className="flex items-center justify-between mb-3 px-1">
+                  <div className="flex gap-1.5">
+                    {TIMEFRAMES.map(t => (
+                      <button key={t.key} onClick={() => setBagsTfNew(t.key)}
+                        className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                          currentBagsTf === t.key
+                            ? "bg-primary/20 text-primary border border-primary/30"
+                            : "bg-muted/30 text-muted-foreground border border-transparent hover:text-foreground"
+                        }`}>{t.key}</button>
+                    ))}
+                  </div>
+                  <span className="text-[10px] text-muted-foreground">via Bags.fm</span>
+                </div>
+              )}
+
+              {/* Bags loading */}
+              {bagsLoading ? (
+                bagsSubTab === "bonding" ? (
+                  <div className="space-y-0">
+                    {[...Array(8)].map((_, i) => (
+                      <div key={i} className="flex items-center gap-3 py-3 px-3 border-b border-border">
+                        <div className="w-6 h-4 bg-muted rounded animate-pulse" />
+                        <div className="w-9 h-9 rounded-xl bg-muted animate-pulse shrink-0" />
+                        <div className="flex-1 space-y-2">
+                          <div className="h-3 bg-muted rounded animate-pulse w-1/3" />
+                          <div className="h-1.5 bg-muted rounded-full animate-pulse w-full" />
+                        </div>
+                        <div className="h-3 bg-muted rounded animate-pulse w-12" />
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div>
+                    <TableHeader />
+                    {[...Array(7)].map((_, i) => (
+                      <div key={i} className="flex items-center gap-2 py-2.5 px-3 border-b border-border">
+                        <Skeleton className="w-6 h-4" /><Skeleton className="w-8 h-8 rounded-full" />
+                        <div className="flex-1 space-y-1"><Skeleton className="h-3.5 w-24" /><Skeleton className="h-3 w-14" /></div>
+                        <Skeleton className="w-16 h-4" /><Skeleton className="w-14 h-4" /><Skeleton className="w-16 h-4 hidden sm:block" />
+                      </div>
+                    ))}
+                  </div>
+                )
+              ) : bagsError ? (
+                <div className="flex flex-col items-center gap-3 py-12">
+                  <p className="text-sm text-muted-foreground text-center max-w-xs">{bagsError}</p>
+                  <Button variant="outline" size="sm" onClick={() => fetchBags(bagsSubTab, currentBagsTf)} className="gap-1.5">
+                    <RefreshCw className="h-3.5 w-3.5" /> Retry
+                  </Button>
+                </div>
+              ) : bagsTokens.length === 0 ? (
+                <div className="text-center py-12">
+                  <Sparkles className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
+                  <p className="text-sm text-muted-foreground">No tokens found</p>
+                </div>
+              ) : bagsSubTab === "bonding" ? (
+                /* Bags Almost Bonded */
+                <div>
+                  <div className="flex items-center justify-between mb-3 px-1">
+                    <span className="text-[11px] text-muted-foreground">{bagsTokens.length} tokens · sorted by bonding progress</span>
+                    <div className="flex items-center gap-1">
+                      <span className="relative flex h-1.5 w-1.5">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75" />
+                        <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-success" />
+                      </span>
+                      <span className="text-[10px] text-muted-foreground">refreshes 30s</span>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-12 py-2 px-3 text-[10px] uppercase tracking-wider text-muted-foreground font-semibold border-b border-border">
+                    <div className="col-span-1 text-center">#</div>
+                    <div className="col-span-4">Token</div>
+                    <div className="col-span-4">Bonding curve</div>
+                    <div className="col-span-2 text-right">Price</div>
+                    <div className="col-span-1 text-right hidden sm:block">Liq</div>
+                  </div>
+                  {bagsTokens.map((token, i) => {
+                    const progress  = (token as any).bondingProgress ?? 0;
+                    const solInPool = (token as any).quoteReserveSol ?? 0;
+                    const bcColor = progress >= 90 ? "bg-success" : progress >= 70 ? "bg-warning" : progress >= 50 ? "bg-primary" : "bg-muted-foreground/50";
+                    const bcText  = progress >= 90 ? "text-success" : progress >= 70 ? "text-warning" : progress >= 50 ? "text-primary" : "text-muted-foreground";
+                    return (
+                      <motion.div key={token.tokenAddress} initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+                        transition={{ delay: i * 0.015 }} onClick={() => openToken(token)}
+                        className="border-b border-border hover:bg-muted/20 active:bg-muted/40 cursor-pointer transition-colors">
+                        <div className="grid grid-cols-12 items-center py-2.5 px-3 gap-1">
+                          <div className="col-span-1 text-center text-[10px] text-muted-foreground font-mono">{i + 1}</div>
+                          <div className="col-span-4 flex items-center gap-2 min-w-0">
+                            <TokenAvatar icon={token.icon} symbol={token.symbol || "?"} />
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1">
+                                <span className="text-xs font-semibold text-foreground truncate">{token.name || "Unknown"}</span>
+                                {progress >= 90 && <span className="shrink-0 text-[8px] font-bold px-1 py-0.5 rounded bg-success/15 text-success">HOT</span>}
+                              </div>
+                              <span className="text-[10px] text-muted-foreground">${token.symbol || "???"}</span>
+                            </div>
+                          </div>
+                          <div className="col-span-4 flex flex-col gap-1">
+                            <div className="flex items-center justify-between">
+                              <span className={`text-[11px] font-bold tabular-nums ${bcText}`}>{progress}%</span>
+                              {progress >= 90 && <span className="text-[9px] font-bold text-success animate-pulse">Almost done!</span>}
+                            </div>
+                            <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden">
+                              <div className={`h-full rounded-full transition-all duration-500 ${bcColor}`} style={{ width: `${Math.min(progress, 100)}%` }} />
+                            </div>
+                          </div>
+                          <div className="col-span-2 text-right"><span className="text-xs font-mono text-foreground">{formatPrice(token.priceUsd)}</span></div>
+                          <div className="col-span-1 text-right hidden sm:block">
+                            <span className="text-[10px] text-muted-foreground">
+                              {solInPool > 0 ? `${solInPool.toFixed(1)}◎` : formatMcap(token.liquidity)}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="px-3 pb-2 flex items-center gap-3">
+                          <div className="w-9 shrink-0" /><div className="flex-1" />
+                          {token.twitter && <span className="text-[9px] text-blue-400/60 shrink-0">𝕏</span>}
+                          {token.url && <a href={token.url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-[9px] text-muted-foreground/40 hover:text-primary transition-colors shrink-0">bags ↗</a>}
+                          <a href={`https://solscan.io/token/${token.tokenAddress}`} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-[9px] text-muted-foreground/40 hover:text-primary transition-colors shrink-0">TX ↗</a>
+                        </div>
+                      </motion.div>
+                    );
+                  })}
+                </div>
+              ) : (
+                /* Bags New & Migrated */
+                <div>
+                  <div className="flex items-center justify-between mb-3 px-1">
+                    <span className="text-[11px] text-muted-foreground">
+                      {bagsTokens.length} tokens{bagsSubTab === "migrated" ? " · graduated to Meteora DAMM v2" : ""}
                     </span>
-                  ) : <span className="text-xs text-muted-foreground">—</span>}
+                    <div className="flex items-center gap-1">
+                      <span className="relative flex h-1.5 w-1.5">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75" />
+                        <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-success" />
+                      </span>
+                      <span className="text-[10px] text-muted-foreground">refreshes 30s</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 py-2 px-3 text-[10px] uppercase tracking-wider text-muted-foreground font-semibold border-b border-border">
+                    <span className="w-6 text-center">#</span><span className="w-9" />
+                    <span className="flex-1">Token</span>
+                    <span className="w-20 text-right">Price</span>
+                    <span className="w-16 text-right">Change</span>
+                    <span className="w-20 text-right hidden sm:block">MCap</span>
+                  </div>
+                  {bagsTokens.map((token, i) => {
+                    const change = getChange(token, currentBagsTf);
+                    const isPos  = (change ?? 0) >= 0;
+                    const mcap   = token.marketCap || token.fdv || null;
+                    const isNew  = bagsSubTab === "new" && !!token.pairCreatedAt && Date.now() - token.pairCreatedAt < 3_600_000;
+                    return (
+                      <motion.div key={token.tokenAddress} initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+                        transition={{ delay: i * 0.015 }} onClick={() => openToken(token)}
+                        className="border-b border-border hover:bg-muted/20 active:bg-muted/40 cursor-pointer transition-colors">
+                        <div className="flex items-center gap-2 py-2.5 px-3">
+                          <span className="w-6 text-center text-[10px] text-muted-foreground font-mono">{i + 1}</span>
+                          <TokenAvatar icon={token.icon} symbol={token.symbol || token.name || "?"} />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs font-semibold text-foreground truncate">{token.name || "Unknown"}</span>
+                              {isNew && <span className="shrink-0 text-[8px] font-bold px-1 py-0.5 rounded bg-primary/15 text-primary">NEW</span>}
+                              {token.migrated && <span className="shrink-0 text-[8px] font-bold px-1 py-0.5 rounded bg-secondary/15 text-secondary hidden sm:inline">V2</span>}
+                              {token.twitter && <span className="shrink-0 text-[8px] px-1 py-0.5 rounded bg-blue-500/10 text-blue-400 hidden sm:inline">𝕏</span>}
+                            </div>
+                            <span className="text-[10px] text-muted-foreground">${token.symbol || "???"}</span>
+                          </div>
+                          <div className="w-20 text-right"><span className="text-xs font-mono text-foreground">{formatPrice(token.priceUsd)}</span></div>
+                          <div className="w-16 text-right">
+                            {change !== null ? (
+                              <span className={`inline-flex items-center gap-0.5 text-xs font-medium ${isPos ? "text-success" : "text-destructive"}`}>
+                                {isPos ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />}
+                                {Math.abs(change).toFixed(1)}%
+                              </span>
+                            ) : <span className="text-xs text-muted-foreground">—</span>}
+                          </div>
+                          <div className="w-20 text-right hidden sm:block"><span className="text-xs text-muted-foreground">{formatMcap(mcap)}</span></div>
+                        </div>
+                        <div className="px-3 pb-2 flex items-center gap-3">
+                          <div className="w-9 shrink-0" /><div className="flex-1" />
+                          {token.url && <a href={token.url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-[9px] text-muted-foreground/40 hover:text-primary transition-colors shrink-0">bags ↗</a>}
+                          <a href={`https://solscan.io/token/${token.tokenAddress}`} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-[9px] text-muted-foreground/40 hover:text-primary transition-colors shrink-0">TX ↗</a>
+                        </div>
+                      </motion.div>
+                    );
+                  })}
                 </div>
-                <div className="w-20 text-right hidden sm:block"><span className="text-xs text-muted-foreground">{formatMcap(mcap)}</span></div>
-              </motion.div>
-            );
-          })}
-        </div>
+              )}
+            </div>
+          )}
+
+          {/* ══════════════════════════════════════════════════════════
+              PUMP.FUN TAB
+          ══════════════════════════════════════════════════════════ */}
+          {activeTab === "pump" && (
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <img src={pumpfunLogo} alt="Pump.fun" className="h-7 w-7 rounded-full object-cover" />
+                  <div>
+                    <span className="text-sm font-bold text-foreground">Pump.fun</span>
+                    <span className="text-xs text-muted-foreground ml-2">Bonding Curve Launchpad</span>
+                  </div>
+                </div>
+                <button onClick={() => {
+                  pumpCache.current.delete(`pump-${pumpTab}`);
+                  if (pumpTab === "bonding") { ppBcMap.current.clear(); ppGradSet.current.clear(); disconnectPpWs(); }
+                  fetchPump(pumpTab);
+                }} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors">
+                  <RefreshCw className="h-3 w-3" /> Refresh
+                </button>
+              </div>
+
+              <div className="flex gap-1 mb-4 p-1 bg-muted/40 rounded-xl">
+                {([
+                  { key: "new"       as PumpTab, label: "New",           icon: "✦" },
+                  { key: "bonding"   as PumpTab, label: "Almost Bonded", icon: "◈" },
+                  { key: "graduated" as PumpTab, label: "Graduated",     icon: "◉" },
+                ] as const).map(t => (
+                  <button key={t.key} onClick={() => setPumpTab(t.key)}
+                    className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold transition-all ${
+                      pumpTab === t.key ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                    }`}>
+                    <span className="text-[10px] opacity-70">{t.icon}</span>{t.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Pump New */}
+              {pumpTab === "new" && (() => {
+                if (pumpLoading) return (
+                  <div>
+                    <div className="flex items-center gap-2 py-2 px-3 text-[10px] uppercase tracking-wider text-muted-foreground font-semibold border-b border-border">
+                      <span className="w-6 text-center">#</span><span className="w-9" /><span className="flex-1">Token</span>
+                      <span className="w-20 text-right">Price</span><span className="w-20 text-right">MCap</span><span className="w-16 text-right hidden sm:block">Liq</span>
+                    </div>
+                    {[...Array(8)].map((_, i) => (
+                      <div key={i} className="flex items-center gap-2 py-2.5 px-3 border-b border-border">
+                        <div className="w-6 h-4 bg-muted rounded animate-pulse" />
+                        <div className="w-9 h-9 rounded-xl bg-muted animate-pulse shrink-0" />
+                        <div className="flex-1 space-y-1"><div className="h-3 bg-muted rounded animate-pulse w-28" /><div className="h-3 w-14 bg-muted rounded animate-pulse" /></div>
+                        <div className="w-20 h-3 bg-muted rounded animate-pulse" /><div className="w-20 h-3 bg-muted rounded animate-pulse" /><div className="w-16 h-3 bg-muted rounded animate-pulse hidden sm:block" />
+                      </div>
+                    ))}
+                  </div>
+                );
+                if (pumpError) return (
+                  <div className="flex flex-col items-center gap-3 py-12">
+                    <Zap className="h-10 w-10 text-muted-foreground/30 mx-auto" />
+                    <p className="text-sm text-muted-foreground text-center">{pumpError}</p>
+                    <Button variant="outline" size="sm" onClick={() => fetchPump("new")} className="gap-1.5"><RefreshCw className="h-3.5 w-3.5" /> Retry</Button>
+                  </div>
+                );
+                if (pumpTokens.length === 0) return (
+                  <div className="text-center py-12"><Sparkles className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" /><p className="text-sm text-muted-foreground">No new tokens found</p></div>
+                );
+                return (
+                  <div>
+                    <div className="flex items-center justify-between mb-3 px-1">
+                      <span className="text-[11px] text-muted-foreground">{pumpTokens.length} tokens · baru launch (&lt;20% bonded)</span>
+                      <div className="flex items-center gap-1">
+                        <span className="relative flex h-1.5 w-1.5"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75" /><span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-success" /></span>
+                        <span className="text-[10px] text-muted-foreground">via Moralis</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 py-2 px-3 text-[10px] uppercase tracking-wider text-muted-foreground font-semibold border-b border-border">
+                      <span className="w-6 text-center">#</span><span className="w-9" /><span className="flex-1">Token</span>
+                      <span className="w-20 text-right">Price</span><span className="w-20 text-right">MCap</span><span className="w-16 text-right hidden sm:block">Liq</span>
+                    </div>
+                    {pumpTokens.map((token, i) => (
+                      <motion.div key={token.tokenAddress} initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+                        transition={{ delay: i * 0.01 }} onClick={() => openPumpToken(token)}
+                        className="flex items-center gap-2 py-2.5 px-3 border-b border-border hover:bg-muted/20 active:bg-muted/40 cursor-pointer transition-colors">
+                        <span className="w-6 text-center text-[10px] text-muted-foreground font-mono">{i + 1}</span>
+                        <TokenAvatar icon={token.icon} symbol={token.symbol} />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs font-semibold text-foreground truncate">{token.name}</span>
+                            <span className="shrink-0 text-[8px] font-bold px-1 py-0.5 rounded bg-primary/15 text-primary">NEW</span>
+                          </div>
+                          <span className="text-[10px] text-muted-foreground">${token.symbol}</span>
+                        </div>
+                        <div className="w-20 text-right"><span className="text-xs font-mono text-foreground">{formatPrice(token.priceUsd)}</span></div>
+                        <div className="w-20 text-right"><span className="text-xs text-muted-foreground">{formatMcap(token.marketCap || token.fdv)}</span></div>
+                        <div className="w-16 text-right hidden sm:block"><span className="text-[10px] text-muted-foreground">{formatMcap(token.liquidity)}</span></div>
+                      </motion.div>
+                    ))}
+                  </div>
+                );
+              })()}
+
+              {/* Pump Almost Bonded */}
+              {pumpTab === "bonding" && (() => {
+                void ppTick;
+                const tokens = pumpTokens.filter(t => !ppGradSet.current.has(t.tokenAddress));
+                if (pumpLoading) return (
+                  <div className="space-y-0">
+                    {[...Array(8)].map((_, i) => (
+                      <div key={i} className="flex items-center gap-3 py-3 px-3 border-b border-border">
+                        <div className="w-6 h-4 bg-muted rounded animate-pulse" />
+                        <div className="w-9 h-9 rounded-xl bg-muted animate-pulse shrink-0" />
+                        <div className="flex-1 space-y-2"><div className="h-3 bg-muted rounded animate-pulse w-1/3" /><div className="h-1.5 bg-muted rounded-full animate-pulse w-full" /></div>
+                        <div className="h-3 bg-muted rounded animate-pulse w-12" /><div className="h-3 bg-muted rounded animate-pulse w-16" />
+                      </div>
+                    ))}
+                  </div>
+                );
+                if (pumpError) return (
+                  <div className="flex flex-col items-center gap-3 py-12">
+                    <Zap className="h-10 w-10 text-muted-foreground/30 mx-auto" />
+                    <p className="text-sm text-muted-foreground text-center">{pumpError}</p>
+                    <Button variant="outline" size="sm" onClick={() => fetchPump("bonding")} className="gap-1.5"><RefreshCw className="h-3.5 w-3.5" /> Retry</Button>
+                  </div>
+                );
+                if (tokens.length === 0) return (
+                  <div className="text-center py-12"><Flame className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" /><p className="text-sm text-muted-foreground">No bonding tokens found</p></div>
+                );
+                return (
+                  <div>
+                    <div className="flex items-center justify-between mb-3 px-1">
+                      <span className="text-[11px] text-muted-foreground">{tokens.length} tokens · 20–99% · sorted by progress</span>
+                      <div className="flex items-center gap-1.5">
+                        {ppWsStatus === "connected" ? (
+                          <><span className="relative flex h-1.5 w-1.5"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75" /><span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-success" /></span><span className="text-[10px] text-success font-medium">real-time</span></>
+                        ) : ppWsStatus === "connecting" ? (
+                          <><Loader2 className="h-2.5 w-2.5 animate-spin text-muted-foreground" /><span className="text-[10px] text-muted-foreground">connecting...</span></>
+                        ) : (
+                          <><span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/40" /><span className="text-[10px] text-muted-foreground">snapshot</span></>
+                        )}
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-12 py-2 px-3 text-[10px] uppercase tracking-wider text-muted-foreground font-semibold border-b border-border">
+                      <div className="col-span-1 text-center">#</div>
+                      <div className="col-span-4">Token</div>
+                      <div className="col-span-4">Bonding curve</div>
+                      <div className="col-span-2 text-right">Liq</div>
+                      <div className="col-span-1 text-right">MCap</div>
+                    </div>
+                    {[...tokens]
+                      .map(t => ({ t, bc: ppBcMap.current.get(t.tokenAddress) ?? t.bondingCurve ?? 0 }))
+                      .sort((a, b) => b.bc - a.bc)
+                      .map(({ t: token, bc }, i) => {
+                        const bcColor = bc >= 90 ? "bg-success" : bc >= 70 ? "bg-warning" : bc >= 50 ? "bg-primary" : "bg-muted-foreground/50";
+                        const bcText  = bc >= 90 ? "text-success" : bc >= 70 ? "text-warning" : bc >= 50 ? "text-primary" : "text-muted-foreground";
+                        const isLive  = ppBcMap.current.has(token.tokenAddress);
+                        return (
+                          <motion.div key={token.tokenAddress} initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+                            transition={{ delay: i * 0.01 }} onClick={() => openPumpToken(token)}
+                            className="border-b border-border hover:bg-muted/20 active:bg-muted/40 cursor-pointer transition-colors">
+                            <div className="grid grid-cols-12 items-center py-2.5 px-3 gap-1">
+                              <div className="col-span-1 text-center text-[10px] text-muted-foreground font-mono">{i + 1}</div>
+                              <div className="col-span-4 flex items-center gap-2 min-w-0">
+                                <TokenAvatar icon={token.icon} symbol={token.symbol} />
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-1">
+                                    <span className="text-xs font-semibold text-foreground truncate">{token.name}</span>
+                                    {bc >= 90 && <span className="shrink-0 text-[8px] font-bold px-1 py-0.5 rounded bg-success/15 text-success">HOT</span>}
+                                  </div>
+                                  <span className="text-[10px] text-muted-foreground">${token.symbol}</span>
+                                </div>
+                              </div>
+                              <div className="col-span-4 flex flex-col gap-1">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-1">
+                                    <span className={`text-[11px] font-bold tabular-nums ${bcText}`}>{bc.toFixed(1)}%</span>
+                                    {isLive && <span className="text-[8px] text-success/70 font-medium">live</span>}
+                                  </div>
+                                  {bc >= 90 && <span className="text-[9px] font-bold text-success animate-pulse">Almost done!</span>}
+                                </div>
+                                <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden">
+                                  <div className={`h-full rounded-full transition-all duration-500 ${bcColor}`} style={{ width: `${Math.min(bc, 100)}%` }} />
+                                </div>
+                              </div>
+                              <div className="col-span-2 text-right"><span className="text-xs text-muted-foreground">{formatMcap(token.liquidity)}</span></div>
+                              <div className="col-span-1 text-right"><span className="text-[10px] text-muted-foreground">{formatMcap(token.marketCap || token.fdv)}</span></div>
+                            </div>
+                            <div className="px-3 pb-2 flex items-center gap-3">
+                              <div className="w-9 shrink-0" />
+                              <div className="flex items-center gap-2 flex-1 min-w-0 flex-wrap">
+                                {token.priceUsd && <span className="text-[10px] text-muted-foreground font-mono">{formatPrice(token.priceUsd)}</span>}
+                                {token.volume24h != null && token.volume24h > 0 && <span className="text-[10px] text-muted-foreground/70">Vol {formatMcap(token.volume24h)}</span>}
+                                {token.txns24h != null && token.txns24h > 0 && <span className="text-[10px] text-muted-foreground/70">{token.txns24h} txns</span>}
+                              </div>
+                              <a href={token.url || `https://pump.fun/coin/${token.tokenAddress}`} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-[9px] text-muted-foreground/40 hover:text-primary transition-colors shrink-0">pump ↗</a>
+                              <a href={`https://solscan.io/token/${token.tokenAddress}`} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-[9px] text-muted-foreground/40 hover:text-primary transition-colors shrink-0">TX ↗</a>
+                            </div>
+                          </motion.div>
+                        );
+                      })}
+                  </div>
+                );
+              })()}
+
+              {/* Pump Graduated */}
+              {pumpTab === "graduated" && (() => {
+                if (pumpLoading) return (
+                  <div>
+                    <div className="flex items-center gap-2 py-2 px-3 text-[10px] uppercase tracking-wider text-muted-foreground font-semibold border-b border-border">
+                      <span className="w-6 text-center">#</span><span className="w-9" /><span className="flex-1">Token</span>
+                      <span className="w-20 text-right">Price</span><span className="w-20 text-right hidden sm:block">MCap</span>
+                    </div>
+                    {[...Array(7)].map((_, i) => (
+                      <div key={i} className="flex items-center gap-2 py-2.5 px-3 border-b border-border">
+                        <div className="w-6 h-4 bg-muted rounded animate-pulse" />
+                        <div className="w-9 h-9 rounded-xl bg-muted animate-pulse shrink-0" />
+                        <div className="flex-1 space-y-1"><div className="h-3 bg-muted rounded animate-pulse w-24" /><div className="h-3 w-14 bg-muted rounded animate-pulse" /></div>
+                        <div className="w-20 h-3 bg-muted rounded animate-pulse" /><div className="w-20 h-3 bg-muted rounded animate-pulse hidden sm:block" />
+                      </div>
+                    ))}
+                  </div>
+                );
+                if (pumpError) return (
+                  <div className="flex flex-col items-center gap-3 py-12">
+                    <p className="text-sm text-muted-foreground text-center">{pumpError}</p>
+                    <Button variant="outline" size="sm" onClick={() => fetchPump("graduated")} className="gap-1.5"><RefreshCw className="h-3.5 w-3.5" /> Retry</Button>
+                  </div>
+                );
+                if (pumpTokens.length === 0) return (
+                  <div className="text-center py-12"><span className="text-3xl mb-3 block">◉</span><p className="text-sm text-muted-foreground">No graduated tokens found</p></div>
+                );
+                return (
+                  <div>
+                    <div className="flex items-center justify-between mb-3 px-1">
+                      <span className="text-[11px] text-muted-foreground">{pumpTokens.length} tokens · migrated ke PumpSwap</span>
+                      <div className="flex items-center gap-1">
+                        <span className="relative flex h-1.5 w-1.5"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75" /><span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-success" /></span>
+                        <span className="text-[10px] text-muted-foreground">refreshes 20s</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 py-2 px-3 text-[10px] uppercase tracking-wider text-muted-foreground font-semibold border-b border-border">
+                      <span className="w-6 text-center">#</span><span className="w-9" /><span className="flex-1">Token</span>
+                      <span className="w-20 text-right">Price</span><span className="w-20 text-right hidden sm:block">MCap</span>
+                    </div>
+                    {pumpTokens.map((token, i) => {
+                      const gradAt  = token.graduatedAt;
+                      const gradAge = gradAt ? (() => {
+                        const diff = Date.now() - new Date(gradAt).getTime();
+                        const mins = Math.floor(diff / 60000);
+                        if (mins < 1) return "<1m";
+                        if (mins < 60) return `${mins}m`;
+                        const hrs = Math.floor(mins / 60);
+                        return hrs < 24 ? `${hrs}h` : `${Math.floor(hrs / 24)}d`;
+                      })() : null;
+                      return (
+                        <motion.div key={token.tokenAddress} initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+                          transition={{ delay: i * 0.01 }} onClick={() => openPumpToken(token)}
+                          className="flex items-center gap-2 py-2.5 px-3 border-b border-border hover:bg-muted/20 active:bg-muted/40 cursor-pointer transition-colors">
+                          <span className="w-6 text-center text-[10px] text-muted-foreground font-mono">{i + 1}</span>
+                          <TokenAvatar icon={token.icon} symbol={token.symbol} />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs font-semibold text-foreground truncate">{token.name}</span>
+                              <span className="shrink-0 text-[8px] font-bold px-1.5 py-0.5 rounded bg-success/15 text-success">DEX</span>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[10px] text-muted-foreground">${token.symbol}</span>
+                              {gradAge && <span className="text-[9px] text-muted-foreground/50">{gradAge} ago</span>}
+                            </div>
+                          </div>
+                          <div className="w-20 text-right"><span className="text-xs font-mono text-foreground">{formatPrice(token.priceUsd)}</span></div>
+                          <div className="w-20 text-right hidden sm:block"><span className="text-xs text-muted-foreground">{formatMcap(token.marketCap || token.fdv)}</span></div>
+                        </motion.div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
+          {/* ══════════════════════════════════════════════════════════
+              BONK.FUN TAB
+          ══════════════════════════════════════════════════════════ */}
+          {activeTab === "bonk" && (
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <img src={bonkfunLogo} alt="Bonk.fun" className="h-7 w-7 rounded-full object-cover" />
+                  <div>
+                    <span className="text-sm font-bold text-foreground">Bonk.fun</span>
+                    <span className="text-xs text-muted-foreground ml-2">Raydium Launchpad</span>
+                  </div>
+                </div>
+                <button onClick={() => { bonkCache.current.delete(`bonk-${bonkTab}`); fetchBonk(bonkTab); }}
+                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors">
+                  <RefreshCw className="h-3 w-3" /> Refresh
+                </button>
+              </div>
+
+              <div className="flex gap-1 mb-4 p-1 bg-muted/40 rounded-xl">
+                {([
+                  { key: "new"      as BonkTab, label: "New",           icon: "✦" },
+                  { key: "bonding"  as BonkTab, label: "Almost Bonded", icon: "◈" },
+                  { key: "migrated" as BonkTab, label: "Migrated",      icon: "◉" },
+                ] as const).map(t => (
+                  <button key={t.key} onClick={() => setBonkTab(t.key)}
+                    className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold transition-all ${
+                      bonkTab === t.key ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                    }`}>
+                    <span className="text-[10px] opacity-70">{t.icon}</span>{t.label}
+                  </button>
+                ))}
+              </div>
+
+              {bonkLoading && bonkTokens.length === 0 ? (
+                bonkTab === "bonding" ? (
+                  <div>
+                    <div className="grid grid-cols-12 py-2 px-3 text-[10px] uppercase tracking-wider text-muted-foreground font-semibold border-b border-border">
+                      <div className="col-span-1 text-center">#</div><div className="col-span-4">Token</div>
+                      <div className="col-span-4">Bonding curve</div><div className="col-span-2 text-right">Liq</div><div className="col-span-1 text-right">MCap</div>
+                    </div>
+                    {[...Array(8)].map((_, i) => (
+                      <div key={i} className="grid grid-cols-12 items-center py-3 px-3 border-b border-border gap-1">
+                        <div className="col-span-1"><div className="h-4 w-4 bg-muted rounded animate-pulse mx-auto" /></div>
+                        <div className="col-span-4 flex items-center gap-2">
+                          <div className="w-9 h-9 rounded-xl bg-muted animate-pulse shrink-0" />
+                          <div className="flex-1 space-y-1.5"><div className="h-3 bg-muted rounded animate-pulse w-24" /><div className="h-3 bg-muted rounded animate-pulse w-14" /></div>
+                        </div>
+                        <div className="col-span-4 space-y-1.5"><div className="h-3 bg-muted rounded animate-pulse w-10" /><div className="h-1.5 bg-muted rounded-full animate-pulse w-full" /></div>
+                        <div className="col-span-2"><div className="h-3 bg-muted rounded animate-pulse ml-auto w-12" /></div>
+                        <div className="col-span-1"><div className="h-3 bg-muted rounded animate-pulse ml-auto w-10" /></div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div>
+                    <div className="flex items-center gap-2 py-2 px-3 text-[10px] uppercase tracking-wider text-muted-foreground font-semibold border-b border-border">
+                      <span className="w-6 text-center">#</span><span className="w-9" /><span className="flex-1">Token</span>
+                      <span className="w-20 text-right">Price</span><span className="w-20 text-right">MCap</span><span className="w-16 text-right hidden sm:block">Liq</span>
+                    </div>
+                    {[...Array(8)].map((_, i) => (
+                      <div key={i} className="flex items-center gap-2 py-2.5 px-3 border-b border-border">
+                        <div className="w-6 h-4 bg-muted rounded animate-pulse" />
+                        <div className="w-9 h-9 rounded-xl bg-muted animate-pulse shrink-0" />
+                        <div className="flex-1 space-y-1"><div className="h-3 bg-muted rounded animate-pulse w-28" /><div className="h-3 bg-muted rounded animate-pulse w-14" /></div>
+                        <div className="w-20 h-3 bg-muted rounded animate-pulse" /><div className="w-20 h-3 bg-muted rounded animate-pulse" /><div className="w-16 h-3 bg-muted rounded animate-pulse hidden sm:block" />
+                      </div>
+                    ))}
+                  </div>
+                )
+              ) : bonkError ? (
+                <div className="flex flex-col items-center gap-3 py-12">
+                  <Flame className="h-10 w-10 text-muted-foreground/30 mx-auto" />
+                  <p className="text-sm text-muted-foreground text-center max-w-xs">{bonkError}</p>
+                  <Button variant="outline" size="sm" onClick={() => fetchBonk(bonkTab)} className="gap-1.5"><RefreshCw className="h-3.5 w-3.5" /> Retry</Button>
+                </div>
+              ) : bonkTokens.length === 0 ? (
+                <div className="text-center py-12">
+                  <Flame className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
+                  <p className="text-sm text-muted-foreground">No tokens found</p>
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-center justify-between mb-3 px-1">
+                    <span className="text-[11px] text-muted-foreground">
+                      {bonkTokens.length} tokens
+                      {bonkTab === "new"      && " · baru launch (<20% bonded)"}
+                      {bonkTab === "bonding"  && " · 20–99% bonded · sorted by progress"}
+                      {bonkTab === "migrated" && " · graduated ke Raydium"}
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      {bonkLoading
+                        ? <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+                        : <><span className="relative flex h-1.5 w-1.5"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75" /><span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-success" /></span></>
+                      }
+                      <span className="text-[10px] text-muted-foreground">DexScreener · 15s</span>
+                    </div>
+                  </div>
+
+                  {/* Bonk New */}
+                  {bonkTab === "new" && (
+                    <div>
+                      <div className="flex items-center gap-2 py-2 px-3 text-[10px] uppercase tracking-wider text-muted-foreground font-semibold border-b border-border">
+                        <span className="w-6 text-center">#</span><span className="w-9" /><span className="flex-1">Token</span>
+                        <span className="w-20 text-right">Price</span><span className="w-20 text-right">MCap</span><span className="w-16 text-right hidden sm:block">Liq</span>
+                      </div>
+                      {bonkTokens.map((token, i) => (
+                        <motion.div key={token.tokenAddress} initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+                          transition={{ delay: i * 0.01 }} onClick={() => openBonkToken(token)}
+                          className="border-b border-border hover:bg-muted/20 active:bg-muted/40 cursor-pointer transition-colors">
+                          <div className="flex items-center gap-2 py-2.5 px-3">
+                            <span className="w-6 text-center text-[10px] text-muted-foreground font-mono">{i + 1}</span>
+                            <TokenAvatar icon={token.icon} symbol={token.symbol} color="text-orange-400" />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-xs font-semibold text-foreground truncate">{token.name}</span>
+                                <span className="shrink-0 text-[8px] font-bold px-1 py-0.5 rounded bg-primary/15 text-primary">NEW</span>
+                                <span className="shrink-0 text-[8px] font-bold px-1 py-0.5 rounded bg-orange-400/10 text-orange-400">BONK</span>
+                              </div>
+                              <span className="text-[10px] text-muted-foreground">${token.symbol}</span>
+                            </div>
+                            <div className="w-20 text-right"><span className="text-xs font-mono text-foreground">{formatPrice(token.priceUsd)}</span></div>
+                            <div className="w-20 text-right"><span className="text-xs text-muted-foreground">{formatMcap(token.marketCap)}</span></div>
+                            <div className="w-16 text-right hidden sm:block"><span className="text-[10px] text-muted-foreground">{formatMcap(token.liquidity)}</span></div>
+                          </div>
+                          <div className="px-3 pb-2 flex items-center gap-3">
+                            <div className="w-9 shrink-0" /><div className="flex-1" />
+                            <a href={token.url || `https://letsbonk.fun/token/${token.tokenAddress}`} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-[9px] text-muted-foreground/40 hover:text-primary transition-colors shrink-0">bonk ↗</a>
+                            <a href={`https://solscan.io/token/${token.tokenAddress}`} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-[9px] text-muted-foreground/40 hover:text-primary transition-colors shrink-0">TX ↗</a>
+                          </div>
+                        </motion.div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Bonk Almost Bonded */}
+                  {bonkTab === "bonding" && (
+                    <div>
+                      <div className="grid grid-cols-12 py-2 px-3 text-[10px] uppercase tracking-wider text-muted-foreground font-semibold border-b border-border">
+                        <div className="col-span-1 text-center">#</div><div className="col-span-4">Token</div>
+                        <div className="col-span-4">Bonding curve</div><div className="col-span-2 text-right">Liq</div><div className="col-span-1 text-right">MCap</div>
+                      </div>
+                      {bonkTokens.map((token, i) => {
+                        const bc      = token.bondingCurve ?? 0;
+                        const bcColor = bc >= 90 ? "bg-success" : bc >= 70 ? "bg-warning" : bc >= 50 ? "bg-primary" : "bg-muted-foreground/50";
+                        const bcText  = bc >= 90 ? "text-success" : bc >= 70 ? "text-warning" : bc >= 50 ? "text-primary" : "text-muted-foreground";
+                        return (
+                          <motion.div key={token.tokenAddress} initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+                            transition={{ delay: i * 0.01 }} onClick={() => openBonkToken(token)}
+                            className="border-b border-border hover:bg-muted/20 active:bg-muted/40 cursor-pointer transition-colors">
+                            <div className="grid grid-cols-12 items-center py-2.5 px-3 gap-1">
+                              <div className="col-span-1 text-center text-[10px] text-muted-foreground font-mono">{i + 1}</div>
+                              <div className="col-span-4 flex items-center gap-2 min-w-0">
+                                <TokenAvatar icon={token.icon} symbol={token.symbol} color="text-orange-400" />
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-1">
+                                    <span className="text-xs font-semibold text-foreground truncate">{token.name}</span>
+                                    {bc >= 90 && <span className="shrink-0 text-[8px] font-bold px-1 py-0.5 rounded bg-success/15 text-success">HOT</span>}
+                                  </div>
+                                  <span className="text-[10px] text-muted-foreground">${token.symbol}</span>
+                                </div>
+                              </div>
+                              <div className="col-span-4 flex flex-col gap-1">
+                                <div className="flex items-center justify-between">
+                                  <span className={`text-[11px] font-bold tabular-nums ${bcText}`}>{bc.toFixed(1)}%</span>
+                                  {bc >= 90 && <span className="text-[9px] font-bold text-success animate-pulse">Almost done!</span>}
+                                </div>
+                                <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden">
+                                  <div className={`h-full rounded-full transition-all duration-500 ${bcColor}`} style={{ width: `${Math.min(bc, 100)}%` }} />
+                                </div>
+                              </div>
+                              <div className="col-span-2 text-right"><span className="text-xs text-muted-foreground">{formatMcap(token.liquidity)}</span></div>
+                              <div className="col-span-1 text-right"><span className="text-[10px] text-muted-foreground">{formatMcap(token.marketCap)}</span></div>
+                            </div>
+                            <div className="px-3 pb-2 flex items-center gap-3">
+                              <div className="w-9 shrink-0" /><div className="flex-1" />
+                              <a href={token.url || `https://letsbonk.fun/token/${token.tokenAddress}`} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-[9px] text-muted-foreground/40 hover:text-primary transition-colors shrink-0">bonk ↗</a>
+                              <a href={`https://solscan.io/token/${token.tokenAddress}`} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-[9px] text-muted-foreground/40 hover:text-primary transition-colors shrink-0">TX ↗</a>
+                            </div>
+                          </motion.div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Bonk Migrated */}
+                  {bonkTab === "migrated" && (
+                    <div>
+                      <div className="flex items-center gap-2 py-2 px-3 text-[10px] uppercase tracking-wider text-muted-foreground font-semibold border-b border-border">
+                        <span className="w-6 text-center">#</span><span className="w-9" /><span className="flex-1">Token</span>
+                        <span className="w-20 text-right">Price</span><span className="w-20 text-right">MCap</span><span className="w-16 text-right hidden sm:block">Liq</span>
+                      </div>
+                      {bonkTokens.map((token, i) => (
+                        <motion.div key={token.tokenAddress} initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+                          transition={{ delay: i * 0.01 }} onClick={() => openBonkToken(token)}
+                          className="border-b border-border hover:bg-muted/20 active:bg-muted/40 cursor-pointer transition-colors">
+                          <div className="flex items-center gap-2 py-2.5 px-3">
+                            <span className="w-6 text-center text-[10px] text-muted-foreground font-mono">{i + 1}</span>
+                            <TokenAvatar icon={token.icon} symbol={token.symbol} color="text-orange-400" />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-xs font-semibold text-foreground truncate">{token.name}</span>
+                                <span className="shrink-0 text-[8px] font-bold px-1 py-0.5 rounded bg-success/15 text-success">DEX</span>
+                                <span className="shrink-0 text-[8px] font-bold px-1 py-0.5 rounded bg-orange-400/10 text-orange-400">BONK</span>
+                              </div>
+                              <span className="text-[10px] text-muted-foreground">${token.symbol}</span>
+                            </div>
+                            <div className="w-20 text-right"><span className="text-xs font-mono text-foreground">{formatPrice(token.priceUsd)}</span></div>
+                            <div className="w-20 text-right"><span className="text-xs text-muted-foreground">{formatMcap(token.marketCap)}</span></div>
+                            <div className="w-16 text-right hidden sm:block"><span className="text-[10px] text-muted-foreground">{formatMcap(token.liquidity)}</span></div>
+                          </div>
+                          <div className="px-3 pb-2 flex items-center gap-3">
+                            <div className="w-9 shrink-0" /><div className="flex-1" />
+                            {token.volume24h != null && token.volume24h > 0 && <span className="text-[10px] text-muted-foreground/70">Vol {formatMcap(token.volume24h)}</span>}
+                            <a href={token.url || `https://letsbonk.fun/token/${token.tokenAddress}`} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-[9px] text-muted-foreground/40 hover:text-primary transition-colors shrink-0">bonk ↗</a>
+                            <a href={`https://solscan.io/token/${token.tokenAddress}`} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-[9px] text-muted-foreground/40 hover:text-primary transition-colors shrink-0">TX ↗</a>
+                          </div>
+                        </motion.div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
+          {/* ══════════════════════════════════════════════════════════
+              TRENDING TAB
+          ══════════════════════════════════════════════════════════ */}
+          {activeTab === "trending" && (
+            <div>
+              <div className="flex items-center gap-2 mb-4">
+                <TrendingUp className="h-5 w-5 text-warning" />
+                <span className="text-sm font-bold text-foreground">Trending</span>
+                <span className="text-xs text-muted-foreground">— Top gainers on Bags.fm</span>
+              </div>
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex gap-1.5">
+                  {TIMEFRAMES.map(t => (
+                    <button key={t.key} onClick={() => setTfTrend(t.key)}
+                      className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                        tfTrend === t.key
+                          ? "bg-warning/20 text-warning border border-warning/30"
+                          : "bg-muted/30 text-muted-foreground border border-transparent hover:text-foreground"
+                      }`}>{t.key}</button>
+                  ))}
+                </div>
+                <button onClick={() => { trendingCache.current.clear(); fetchTrending(tfTrend); }}
+                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors">
+                  <RefreshCw className="h-3 w-3" /> Refresh
+                </button>
+              </div>
+              {trendingLoading ? (
+                <div><TableHeader />{[...Array(7)].map((_, i) => (
+                  <div key={i} className="flex items-center gap-2 py-2.5 px-3 border-b border-border">
+                    <Skeleton className="w-6 h-4" /><Skeleton className="w-8 h-8 rounded-full" />
+                    <div className="flex-1 space-y-1"><Skeleton className="h-3.5 w-24" /><Skeleton className="h-3 w-14" /></div>
+                    <Skeleton className="w-16 h-4" /><Skeleton className="w-14 h-4" /><Skeleton className="w-16 h-4 hidden sm:block" />
+                  </div>
+                ))}</div>
+              ) : trendingError ? (
+                <div className="flex flex-col items-center gap-3 py-12">
+                  <p className="text-sm text-muted-foreground text-center">{trendingError}</p>
+                  <Button variant="outline" size="sm" onClick={() => fetchTrending(tfTrend)} className="gap-1.5"><RefreshCw className="h-3.5 w-3.5" /> Retry</Button>
+                </div>
+              ) : trendingTokens.length === 0 ? (
+                <div className="text-center py-12"><TrendingUp className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" /><p className="text-sm text-muted-foreground">No trending tokens found</p></div>
+              ) : (
+                <div><TableHeader />
+                  {trendingTokens.map((token, i) => {
+                    const change = getChange(token, tfTrend);
+                    const isPos  = (change ?? 0) >= 0;
+                    return (
+                      <motion.div key={token.tokenAddress} initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+                        transition={{ delay: i * 0.02 }} onClick={() => openToken(token)}
+                        className="flex items-center gap-2 py-2.5 px-3 border-b border-border hover:bg-muted/20 cursor-pointer transition-colors">
+                        <span className="w-6 text-center text-[10px] text-muted-foreground">{i + 1}</span>
+                        <TokenIcon icon={token.icon} symbol={token.symbol} name={token.name} />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-sm font-semibold text-foreground truncate">{token.name || "Unknown"}</span>
+                            {token.twitter && <span className="text-[8px] px-1 py-0.5 rounded bg-blue-500/10 text-blue-400 hidden sm:inline shrink-0">𝕏</span>}
+                          </div>
+                          <span className="text-[10px] text-muted-foreground">${token.symbol || "???"}</span>
+                        </div>
+                        <div className="w-20 text-right"><span className="text-xs font-mono">{formatPrice(token.priceUsd)}</span></div>
+                        <div className="w-16 text-right">
+                          {change !== null ? (
+                            <span className={`inline-flex items-center gap-0.5 text-xs font-bold ${isPos ? "text-success" : "text-destructive"}`}>
+                              {isPos ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />}
+                              {Math.abs(change).toFixed(1)}%
+                            </span>
+                          ) : <span className="text-xs text-muted-foreground">—</span>}
+                        </div>
+                        <div className="w-20 text-right hidden sm:block"><span className="text-xs text-muted-foreground">{formatMcap(token.marketCap || token.fdv)}</span></div>
+                      </motion.div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ══════════════════════════════════════════════════════════
+              ALL TOKENS TAB
+          ══════════════════════════════════════════════════════════ */}
+          {activeTab === "all" && (
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex gap-1.5">
+                  {TIMEFRAMES.map(t => (
+                    <button key={t.key} onClick={() => setTfAll(t.key)}
+                      className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                        tfAll === t.key
+                          ? "bg-primary/20 text-primary border border-primary/30"
+                          : "bg-muted/30 text-muted-foreground border border-transparent hover:text-foreground"
+                      }`}>{t.key}</button>
+                  ))}
+                </div>
+                <button onClick={() => { allCache.current.clear(); fetchAll(tfAll); }}
+                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors">
+                  <RefreshCw className="h-3 w-3" /> Refresh
+                </button>
+              </div>
+              {allLoading ? (
+                <div><TableHeader />{[...Array(7)].map((_, i) => (
+                  <div key={i} className="flex items-center gap-2 py-2.5 px-3 border-b border-border">
+                    <Skeleton className="w-6 h-4" /><Skeleton className="w-8 h-8 rounded-full" />
+                    <div className="flex-1 space-y-1"><Skeleton className="h-3.5 w-24" /><Skeleton className="h-3 w-14" /></div>
+                    <Skeleton className="w-16 h-4" /><Skeleton className="w-14 h-4" /><Skeleton className="w-16 h-4 hidden sm:block" />
+                  </div>
+                ))}</div>
+              ) : allError ? (
+                <div className="flex flex-col items-center gap-3 py-12">
+                  <p className="text-sm text-muted-foreground">{allError}</p>
+                  <Button variant="outline" size="sm" onClick={() => fetchAll(tfAll)} className="gap-1.5"><RefreshCw className="h-3.5 w-3.5" /> Retry</Button>
+                </div>
+              ) : allTokens.length === 0 ? (
+                <div className="text-center py-12"><p className="text-sm text-muted-foreground">No tokens found</p></div>
+              ) : (
+                <div><TableHeader />
+                  {allTokens.map((token, i) => {
+                    const change = getChange(token, tfAll);
+                    const isPos  = (change ?? 0) >= 0;
+                    return (
+                      <motion.div key={token.tokenAddress} initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+                        transition={{ delay: i * 0.02 }} onClick={() => openToken(token)}
+                        className="flex items-center gap-2 py-2.5 px-3 border-b border-border hover:bg-muted/20 active:bg-muted/40 cursor-pointer transition-colors">
+                        <span className="w-6 text-center text-[10px] text-muted-foreground">{i + 1}</span>
+                        <TokenIcon icon={token.icon} symbol={token.symbol} name={token.name} />
+                        <div className="flex-1 min-w-0">
+                          <span className="text-sm font-semibold text-foreground truncate block">{token.name || "Unknown"}</span>
+                          <span className="text-[10px] text-muted-foreground">${token.symbol || "???"}</span>
+                        </div>
+                        <div className="w-20 text-right"><span className="text-xs font-mono">{formatPrice(token.priceUsd)}</span></div>
+                        <div className="w-16 text-right">
+                          {change !== null ? (
+                            <span className={`inline-flex items-center gap-0.5 text-xs font-medium ${isPos ? "text-success" : "text-destructive"}`}>
+                              {isPos ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />}
+                              {Math.abs(change).toFixed(1)}%
+                            </span>
+                          ) : <span className="text-xs text-muted-foreground">—</span>}
+                        </div>
+                        <div className="w-20 text-right hidden sm:block"><span className="text-xs text-muted-foreground">{formatMcap(token.marketCap || token.fdv)}</span></div>
+                      </motion.div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ══════════════════════════════════════════════════════════
+              HISTORY TAB
+          ══════════════════════════════════════════════════════════ */}
+          {activeTab === "history" && (
+            <div>
+              {tokenHistory.length === 0 ? (
+                <div className="text-center py-16">
+                  <Coins className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
+                  <p className="text-sm text-muted-foreground">No token history yet</p>
+                  <p className="text-xs text-muted-foreground mt-1">Tokens you open will appear here</p>
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-center justify-between mb-2 px-1">
+                    <span className="text-xs text-muted-foreground">{tokenHistory.length} tokens</span>
+                    <button onClick={clearTokenHistory} className="text-xs text-muted-foreground hover:text-destructive transition-colors">Clear all</button>
+                  </div>
+                  <TableHeader />
+                  {tokenHistory.map((token, i) => {
+                    const change = getChange(token, "24h");
+                    const isPos  = (change ?? 0) >= 0;
+                    return (
+                      <motion.div key={token.tokenAddress} initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+                        transition={{ delay: i * 0.02 }}
+                        className="flex items-center gap-2 py-2.5 px-3 border-b border-border hover:bg-muted/20 cursor-pointer transition-colors group"
+                        onClick={() => { addTokenHistory(token); setSelectedToken(token); }}>
+                        <span className="w-6 text-center text-[10px] text-muted-foreground">{i + 1}</span>
+                        <TokenIcon icon={token.icon} symbol={token.symbol} name={token.name} />
+                        <div className="flex-1 min-w-0">
+                          <span className="text-sm font-semibold text-foreground truncate block">{token.name || "Unknown"}</span>
+                          <span className="text-[10px] text-muted-foreground">${token.symbol || "???"}</span>
+                        </div>
+                        <div className="w-20 text-right"><span className="text-xs font-mono">{formatPrice(token.priceUsd)}</span></div>
+                        <div className="w-16 text-right">
+                          {change !== null ? (
+                            <span className={`inline-flex items-center gap-0.5 text-xs font-medium ${isPos ? "text-success" : "text-destructive"}`}>
+                              {isPos ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />}
+                              {Math.abs(change).toFixed(1)}%
+                            </span>
+                          ) : <span className="text-xs text-muted-foreground">—</span>}
+                        </div>
+                        <div className="w-20 text-right hidden sm:block"><span className="text-xs text-muted-foreground">{formatMcap(token.marketCap)}</span></div>
+                        <button onClick={e => { e.stopPropagation(); removeTokenHistory(token.tokenAddress); }}
+                          className="opacity-0 group-hover:opacity-100 transition-opacity ml-1 text-muted-foreground hover:text-destructive shrink-0">
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </motion.div>
+                    );
+                  })}
+                </>
+              )}
+            </div>
+          )}
+        </>
       )}
     </div>
   );
