@@ -20,6 +20,9 @@ import NotFound from "./pages/NotFound";
 import ReferralPage from "./pages/ReferralPage";
 import LeaderboardPage from "./pages/LeaderboardPage";
 import TokenAnalyticsPage from "./pages/TokenAnalyticsPage";
+import LicensePage from "./pages/LicensePage";
+import CopyrightPage from "./pages/CopyrightPage";
+import PrivacyPolicyPage from "./pages/PrivacyPolicyPage";
 
 const queryClient = new QueryClient();
 
@@ -52,6 +55,11 @@ const App = () => (
               </Route>
 
               <Route path="*" element={<NotFound />} />
+
+              {/* Legal pages — no AppLayout */}
+              <Route path="/license"        element={<LicensePage />} />
+              <Route path="/copyright"      element={<CopyrightPage />} />
+              <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
             </Routes>
           </BrowserRouter>
           </ProfileProvider>

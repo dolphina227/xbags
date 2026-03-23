@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { Bell, Wallet, MessageSquare } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { Bell, Wallet, MessageSquare, Eye } from "lucide-react";
+import { useNavigate, useLocation } from "react-router-dom";
 import xbagsLogo from "@/assets/xbags-logo.png";
 import WalletConnect from "@/components/wallet/WalletConnect";
 import WalletDrawer from "@/components/wallet/WalletDrawer";
@@ -9,9 +9,12 @@ import { useWallet } from "@/hooks/use-wallet";
 
 const Header = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { unreadCount } = useNotifications();
   const { status } = useWallet();
   const [walletDrawerOpen, setWalletDrawerOpen] = useState(false);
+
+  const isAnalytics = location.pathname === "/analytics";
 
   return (
     <header className="sticky top-0 z-50 flex items-center justify-between px-4 h-14 border-b border-border bg-background/80 backdrop-blur-xl">
@@ -30,6 +33,16 @@ const Header = () => {
           className="md:hidden relative h-10 w-10 flex items-center justify-center rounded-full hover:bg-muted transition-colors active:scale-95"
         >
           <MessageSquare className="h-5 w-5 text-muted-foreground" />
+        </button>
+
+        {/* Analytics — mobile only */}
+        <button
+          onClick={() => navigate("/analytics")}
+          className={`md:hidden relative h-10 w-10 flex items-center justify-center rounded-full hover:bg-muted transition-colors active:scale-95 ${
+            isAnalytics ? "text-primary" : "text-muted-foreground"
+          }`}
+        >
+          <Eye className="h-5 w-5" />
         </button>
 
         {/* Notifications */}

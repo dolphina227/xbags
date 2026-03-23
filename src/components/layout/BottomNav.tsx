@@ -1,6 +1,6 @@
 import { NavLink } from "@/components/NavLink";
 import { useLocation, useNavigate } from "react-router-dom";
-import { Wallet, Home, BarChart3, User, Gift, Coins } from "lucide-react";
+import { Wallet, Home, BarChart3, User, Gift, Eye } from "lucide-react";
 import { useState } from "react";
 import WalletDrawer from "@/components/wallet/WalletDrawer";
 
@@ -9,12 +9,9 @@ const BottomNav = () => {
   const navigate = useNavigate();
   const [walletOpen, setWalletOpen] = useState(false);
 
-  // 4 menu utama: Home, Market, [Wallet], Profile
-  // Leaderboard + Referral masuk ke "More"
   const leftItems = [
-    { title: "Home",   url: "/feed",           icon: Home },
-    { title: "Market", url: "/market",         icon: BarChart3 },
-    
+    { title: "Home",      url: "/feed",       icon: Home },
+    { title: "Market",    url: "/market",     icon: BarChart3 },
   ];
   const rightItems = [
     { title: "Profile", url: "/profile/me", icon: User },
@@ -22,11 +19,11 @@ const BottomNav = () => {
 
   return (
     <>
-      {/* Bottom Nav — fixed, tidak ikut scroll */}
+      {/* Bottom Nav */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-[80] border-t border-border bg-background/98 backdrop-blur-xl safe-bottom">
         <div className="flex items-center justify-around h-16 px-2">
 
-          {/* Left: Home, Market */}
+          {/* Left: Home, Market, Analytics */}
           {leftItems.map((item) => {
             const isActive = location.pathname === item.url;
             return (

@@ -7,7 +7,6 @@ import xbagsLogo from "@/assets/xbags-logo-new.png";
 const LandingPage = () => {
   const navigate = useNavigate();
 
-  // Simpan ref code ke localStorage saat halaman dimuat
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const refCode = params.get("ref");
@@ -29,7 +28,7 @@ const LandingPage = () => {
       {/* Dark overlay */}
       <div className="absolute inset-0 bg-black/40" />
 
-      {/* Content */}
+      {/* Main Content */}
       <motion.div
         initial={{ opacity: 0, y: 30 }}
         animate={{ opacity: 1, y: 0 }}
@@ -40,8 +39,10 @@ const LandingPage = () => {
         <img src={xbagsLogo} alt="XBAGS" className="h-220 sm:h-220 md:h-220 lg:h-220" />
 
         {/* Tagline */}
-        <p className="text-base sm:text-lg md:text-xl tracking-[0.3em] text-white/60 font-light uppercase"
-           style={{ fontFamily: "'Inter', 'Helvetica Neue', sans-serif", letterSpacing: '0.35em' }}>
+        <p
+          className="text-base sm:text-lg md:text-xl tracking-[0.3em] text-white/60 font-light uppercase"
+          style={{ fontFamily: "'Inter', 'Helvetica Neue', sans-serif", letterSpacing: "0.35em" }}
+        >
           Post. Get Tipped. Trade Fast
         </p>
 
@@ -82,6 +83,31 @@ const LandingPage = () => {
             </svg>
           </a>
         </div>
+      </motion.div>
+
+      {/* Legal — fixed di paling bawah */}
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 1, delay: 0.5 }}
+        className="absolute bottom-6 left-0 right-0 z-10 flex flex-col items-center gap-2 px-6"
+      >
+        <div className="flex items-center gap-4 flex-wrap justify-center">
+          <a href="/license" className="text-white/30 hover:text-white/60 transition-colors text-[11px] tracking-wide uppercase">
+            License
+          </a>
+          <span className="text-white/15 text-[11px]">·</span>
+          <a href="/copyright" className="text-white/30 hover:text-white/60 transition-colors text-[11px] tracking-wide uppercase">
+            Copyright
+          </a>
+          <span className="text-white/15 text-[11px]">·</span>
+          <a href="/privacy-policy" className="text-white/30 hover:text-white/60 transition-colors text-[11px] tracking-wide uppercase">
+            Privacy Policy
+          </a>
+        </div>
+        <p className="text-white/20 text-[10px] tracking-widest">
+          © {new Date().getFullYear()} xBAGS. All rights reserved.
+        </p>
       </motion.div>
     </div>
   );
