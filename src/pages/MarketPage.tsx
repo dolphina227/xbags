@@ -701,7 +701,7 @@ export default function MarketPage() {
                   <img src={bagsfmLogo} alt="Bags.fm" className="h-7 w-7 rounded-full object-cover" />
                   <div>
                     <span className="text-sm font-bold text-foreground">Bags.fm</span>
-                    <span className="text-xs text-muted-foreground ml-2">Solana Token Launchpad</span>
+                    <span className="text-xs text-muted-foreground ml-2">Launchpad</span>
                   </div>
                 </div>
                 <button onClick={() => { bagsCache.current.clear(); fetchBags(bagsSubTab, currentBagsTf); }}
@@ -925,7 +925,7 @@ export default function MarketPage() {
                   <img src={pumpfunLogo} alt="Pump.fun" className="h-7 w-7 rounded-full object-cover" />
                   <div>
                     <span className="text-sm font-bold text-foreground">Pump.fun</span>
-                    <span className="text-xs text-muted-foreground ml-2">Bonding Curve Launchpad</span>
+                    <span className="text-xs text-muted-foreground ml-2">Launchpad</span>
                   </div>
                 </div>
                 <button onClick={() => {
