@@ -1204,7 +1204,7 @@ export default function MarketPage() {
                   <img src={bonkfunLogo} alt="Bonk.fun" className="h-7 w-7 rounded-full object-cover" />
                   <div>
                     <span className="text-sm font-bold text-foreground">Bonk.fun</span>
-                    <span className="text-xs text-muted-foreground ml-2">Raydium Launchpad</span>
+                    <span className="text-xs text-muted-foreground ml-2">Launchpad</span>
                   </div>
                 </div>
                 <button onClick={() => {
