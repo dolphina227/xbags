@@ -8,6 +8,13 @@ const LandingPage = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
+    // Inject DM Sans — thin, clean, premium lowercase feel
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href =
+      "https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,200;0,9..40,300&display=swap";
+    document.head.appendChild(link);
+
     const params = new URLSearchParams(window.location.search);
     const refCode = params.get("ref");
     if (refCode) {
@@ -38,12 +45,19 @@ const LandingPage = () => {
         {/* Logo */}
         <img src={xbagsLogo} alt="XBAGS" className="h-220 sm:h-220 md:h-220 lg:h-220" />
 
-        {/* Tagline */}
+        {/* Tagline — DM Sans thin, lowercase, wide spacing — like reference */}
         <p
-          className="text-base sm:text-lg md:text-xl tracking-[0.3em] text-white/60 font-light uppercase"
-          style={{ fontFamily: "'Inter', 'Helvetica Neue', sans-serif", letterSpacing: "0.35em" }}
+          style={{
+            fontFamily: "'DM Sans', 'Helvetica Neue', sans-serif",
+            fontWeight: 200,
+            fontSize: "clamp(0.75rem, 2.4vw, 1rem)",
+            letterSpacing: "0.25em",
+            color: "rgba(255,255,255,0.38)",
+            textTransform: "lowercase",
+            lineHeight: 1.6,
+          }}
         >
-          Post. Get Tipped. Trade Fast
+          post. get tipped. trade fast
         </p>
 
         {/* Launch Button */}
@@ -93,15 +107,24 @@ const LandingPage = () => {
         className="absolute bottom-6 left-0 right-0 z-10 flex flex-col items-center gap-2 px-6"
       >
         <div className="flex items-center gap-4 flex-wrap justify-center">
-          <a href="/license" className="text-white/30 hover:text-white/60 transition-colors text-[11px] tracking-wide uppercase">
+          <a
+            href="/license"
+            className="text-white/30 hover:text-white/60 transition-colors text-[11px] tracking-wide uppercase"
+          >
             License
           </a>
           <span className="text-white/15 text-[11px]">·</span>
-          <a href="/copyright" className="text-white/30 hover:text-white/60 transition-colors text-[11px] tracking-wide uppercase">
+          <a
+            href="/copyright"
+            className="text-white/30 hover:text-white/60 transition-colors text-[11px] tracking-wide uppercase"
+          >
             Copyright
           </a>
           <span className="text-white/15 text-[11px]">·</span>
-          <a href="/privacy-policy" className="text-white/30 hover:text-white/60 transition-colors text-[11px] tracking-wide uppercase">
+          <a
+            href="/privacy-policy"
+            className="text-white/30 hover:text-white/60 transition-colors text-[11px] tracking-wide uppercase"
+          >
             Privacy Policy
           </a>
         </div>
