@@ -102,8 +102,11 @@ interface BonkToken {
   liquidity: number | null;
   volume24h: number | null;
   pairCreatedAt: number | null;
-  bondingCurve: number | null;
+  bondingCurve: number | null;          // % bonding curve (0-99)
+  vSolInBondingCurve?: number | null;   // SOL di pool (dari WS trade event)
   graduated: boolean;
+  isLive?: boolean;                     // token dari WS real-time
+  seenAt?: number;                      // timestamp pertama kali terdeteksi
   url?: string;
 }
 
@@ -380,44 +383,45 @@ export default function MarketPage() {
   useEffect(() => () => { disconnectPpWs(); }, [disconnectPpWs]);
 
   // ── Bonk.fun state ─────────────────────────────────────────────────────────
-  const [bonkTab, setBonkTab]       = useState<BonkTab>("new");
-  const [bonkTokens, setBonkTokens] = useState<BonkToken[]>([]);
+  // Data: DexScreener via edge function, filter endsWith("bonk"), poll 15s
+  const [bonkTab, setBonkTab]         = useState<BonkTab>("new");
+  const [bonkTokens, setBonkTokens]   = useState<BonkToken[]>([]);
   const [bonkLoading, setBonkLoading] = useState(false);
-  const [bonkError, setBonkError]   = useState<string | null>(null);
+  const [bonkError, setBonkError]     = useState<string | null>(null);
   const bonkCache = useRef<Map<string, { data: BonkToken[]; ts: number }>>(new Map());
 
   const fetchBonk = useCallback(async (tab: BonkTab, silent = false) => {
     const cacheKey = `bonk-${tab}`;
     const cached   = bonkCache.current.get(cacheKey);
-    if (cached && Date.now() - cached.ts < 15_000) {
-      setBonkTokens(cached.data);
-      return;
-    }
+    if (cached && Date.now() - cached.ts < 15_000) { setBonkTokens(cached.data); return; }
     if (!silent) setBonkLoading(true);
     setBonkError(null);
     try {
       const data = await invokeMarket({ type: "bonk", bonkTab: tab });
-      if (!data?.success) throw new Error(data?.error || "Bonk fetch failed");
+      if (!data?.success) throw new Error(data?.error || "DexScreener returned no data");
       const tokens: BonkToken[] = (data.tokens ?? []).map((t: any): BonkToken => ({
-        tokenAddress: t.tokenAddress,
-        name:         t.name        || "Unknown",
-        symbol:       t.symbol      || "???",
-        icon:         t.icon        || null,
-        priceUsd:     t.priceUsd    || null,
-        priceChange:  t.priceChange || null,
-        marketCap:    t.marketCap   ? Number(t.marketCap)  : null,
-        fdv:          t.fdv         ? Number(t.fdv)         : null,
-        liquidity:    t.liquidity   ? Number(t.liquidity)   : null,
-        volume24h:    t.volume24h   ? Number(t.volume24h)   : null,
-        pairCreatedAt: t.pairCreatedAt || null,
-        bondingCurve: t.bondingCurve != null ? Number(t.bondingCurve) : null,
-        graduated:    t.graduated   ?? false,
-        url:          t.url || `https://letsbonk.fun/token/${t.tokenAddress}`,
+        tokenAddress:       t.tokenAddress,
+        name:               t.name        || "Unknown",
+        symbol:             t.symbol      || "???",
+        icon:               t.icon        || null,
+        priceUsd:           t.priceUsd    || null,
+        priceChange:        t.priceChange || null,
+        marketCap:          t.marketCap   ? Number(t.marketCap) : null,
+        fdv:                t.fdv         ? Number(t.fdv)        : null,
+        liquidity:          t.liquidity   ? Number(t.liquidity)  : null,
+        volume24h:          t.volume24h   ? Number(t.volume24h)  : null,
+        pairCreatedAt:      t.pairCreatedAt || null,
+        bondingCurve:       t.bondingCurve != null ? Number(t.bondingCurve) : null,
+        vSolInBondingCurve: null,
+        graduated:          t.graduated   ?? false,
+        isLive:             false,
+        seenAt:             Date.now(),
+        url:                t.url || `https://letsbonk.fun/token/${t.tokenAddress}`,
       }));
       bonkCache.current.set(cacheKey, { data: tokens, ts: Date.now() });
       setBonkTokens(tokens);
     } catch (err: any) {
-      setBonkError(err.message || "Failed to load Bonk.fun data");
+      setBonkError(err.message || "Gagal memuat data Bonk.fun");
     } finally {
       setBonkLoading(false);
     }
@@ -433,7 +437,7 @@ export default function MarketPage() {
     return () => clearInterval(id);
   }, [activeTab, bonkTab, fetchBonk]);
 
-  // ── All Tokens state ───────────────────────────────────────────────────────
+    // ── All Tokens state ───────────────────────────────────────────────────────
   const [allTokens, setAllTokens]     = useState<Token[]>([]);
   const [allLoading, setAllLoading]   = useState(false);
   const [allError, setAllError]       = useState<string | null>(null);
@@ -1203,7 +1207,10 @@ export default function MarketPage() {
                     <span className="text-xs text-muted-foreground ml-2">Raydium Launchpad</span>
                   </div>
                 </div>
-                <button onClick={() => { bonkCache.current.delete(`bonk-${bonkTab}`); fetchBonk(bonkTab); }}
+                <button onClick={() => {
+                    bonkCache.current.delete(`bonk-${bonkTab}`);
+                    fetchBonk(bonkTab);
+                  }}
                   className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors">
                   <RefreshCw className="h-3 w-3" /> Refresh
                 </button>
@@ -1220,6 +1227,7 @@ export default function MarketPage() {
                       bonkTab === t.key ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
                     }`}>
                     <span className="text-[10px] opacity-70">{t.icon}</span>{t.label}
+
                   </button>
                 ))}
               </div>
@@ -1264,7 +1272,7 @@ export default function MarketPage() {
                 <div className="flex flex-col items-center gap-3 py-12">
                   <Flame className="h-10 w-10 text-muted-foreground/30 mx-auto" />
                   <p className="text-sm text-muted-foreground text-center max-w-xs">{bonkError}</p>
-                  <Button variant="outline" size="sm" onClick={() => fetchBonk(bonkTab)} className="gap-1.5"><RefreshCw className="h-3.5 w-3.5" /> Retry</Button>
+                  <Button variant="outline" size="sm" onClick={() => { bonkCache.current.delete(`bonk-${bonkTab}`); fetchBonk(bonkTab); }} className="gap-1.5"><RefreshCw className="h-3.5 w-3.5" /> Retry</Button>
                 </div>
               ) : bonkTokens.length === 0 ? (
                 <div className="text-center py-12">
@@ -1282,8 +1290,8 @@ export default function MarketPage() {
                     </span>
                     <div className="flex items-center gap-1.5">
                       {bonkLoading
-                        ? <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
-                        : <><span className="relative flex h-1.5 w-1.5"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75" /><span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-success" /></span></>
+                        ? <Loader2 className="h-2.5 w-2.5 animate-spin text-muted-foreground" />
+                        : <span className="relative flex h-1.5 w-1.5"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75" /><span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-success" /></span>
                       }
                       <span className="text-[10px] text-muted-foreground">DexScreener · 15s</span>
                     </div>
@@ -1306,10 +1314,21 @@ export default function MarketPage() {
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-1.5">
                                 <span className="text-xs font-semibold text-foreground truncate">{token.name}</span>
-                                <span className="shrink-0 text-[8px] font-bold px-1 py-0.5 rounded bg-primary/15 text-primary">NEW</span>
+                                {token.isLive && token.seenAt && Date.now() - token.seenAt < 60_000
+                                  ? <span className="shrink-0 text-[8px] font-bold px-1 py-0.5 rounded bg-success/20 text-success animate-pulse">LIVE</span>
+                                  : <span className="shrink-0 text-[8px] font-bold px-1 py-0.5 rounded bg-primary/15 text-primary">NEW</span>
+                                }
                                 <span className="shrink-0 text-[8px] font-bold px-1 py-0.5 rounded bg-orange-400/10 text-orange-400">BONK</span>
                               </div>
-                              <span className="text-[10px] text-muted-foreground">${token.symbol}</span>
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[10px] text-muted-foreground">${token.symbol}</span>
+                                {token.seenAt && (() => {
+                                  const age = Date.now() - token.seenAt;
+                                  const s = Math.floor(age / 1000);
+                                  const m = Math.floor(s / 60);
+                                  return <span className="text-[9px] text-muted-foreground/50">{m > 0 ? `${m}m` : `${s}s`} ago</span>;
+                                })()}
+                              </div>
                             </div>
                             <div className="w-20 text-right"><span className="text-xs font-mono text-foreground">{formatPrice(token.priceUsd)}</span></div>
                             <div className="w-20 text-right"><span className="text-xs text-muted-foreground">{formatMcap(token.marketCap)}</span></div>
@@ -1361,11 +1380,25 @@ export default function MarketPage() {
                                   <div className={`h-full rounded-full transition-all duration-500 ${bcColor}`} style={{ width: `${Math.min(bc, 100)}%` }} />
                                 </div>
                               </div>
-                              <div className="col-span-2 text-right"><span className="text-xs text-muted-foreground">{formatMcap(token.liquidity)}</span></div>
+                              <div className="col-span-2 text-right">
+                                {token.vSolInBondingCurve != null
+                                  ? <span className="text-xs font-mono text-foreground">{token.vSolInBondingCurve.toFixed(1)}◎</span>
+                                  : <span className="text-xs text-muted-foreground">{formatMcap(token.liquidity)}</span>
+                                }
+                              </div>
                               <div className="col-span-1 text-right"><span className="text-[10px] text-muted-foreground">{formatMcap(token.marketCap)}</span></div>
                             </div>
                             <div className="px-3 pb-2 flex items-center gap-3">
                               <div className="w-9 shrink-0" /><div className="flex-1" />
+                              {token.isLive && (
+                                <div className="flex items-center gap-1 shrink-0">
+                                  <span className="relative flex h-1.5 w-1.5">
+                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-60" />
+                                    <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-success" />
+                                  </span>
+                                  <span className="text-[9px] text-success">live</span>
+                                </div>
+                              )}
                               <a href={token.url || `https://letsbonk.fun/token/${token.tokenAddress}`} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-[9px] text-muted-foreground/40 hover:text-primary transition-colors shrink-0">bonk ↗</a>
                               <a href={`https://solscan.io/token/${token.tokenAddress}`} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-[9px] text-muted-foreground/40 hover:text-primary transition-colors shrink-0">TX ↗</a>
                             </div>
@@ -1392,7 +1425,10 @@ export default function MarketPage() {
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-1.5">
                                 <span className="text-xs font-semibold text-foreground truncate">{token.name}</span>
-                                <span className="shrink-0 text-[8px] font-bold px-1 py-0.5 rounded bg-success/15 text-success">DEX</span>
+                                {token.isLive && token.seenAt && Date.now() - token.seenAt < 120_000
+                                  ? <span className="shrink-0 text-[8px] font-bold px-1 py-0.5 rounded bg-success/20 text-success animate-pulse">JUST MIGRATED</span>
+                                  : <span className="shrink-0 text-[8px] font-bold px-1 py-0.5 rounded bg-success/15 text-success">DEX</span>
+                                }
                                 <span className="shrink-0 text-[8px] font-bold px-1 py-0.5 rounded bg-orange-400/10 text-orange-400">BONK</span>
                               </div>
                               <span className="text-[10px] text-muted-foreground">${token.symbol}</span>
