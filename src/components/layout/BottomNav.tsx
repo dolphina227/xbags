@@ -14,7 +14,7 @@ const BottomNav = () => {
   const leftItems = [
     { title: "Home",   url: "/feed",           icon: Home },
     { title: "Market", url: "/market",         icon: BarChart3 },
-    { title: "Fees",   url: "/unclaimed-fees", icon: Coins },
+    
   ];
   const rightItems = [
     { title: "Profile", url: "/profile/me", icon: User },
