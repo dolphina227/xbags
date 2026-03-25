@@ -40,9 +40,7 @@ const WalletModal = ({ open, onClose }: WalletModalProps) => {
     [onClose]
   );
 
-  // ── FIX: HANDLE SELECT - BIAR WALLET ADAPTER YANG HANDLE DEEP LINK ──
   const handleSelect = async (walletName: string) => {
-    // Langsung connect, Wallet Adapter akan handle deep link + connection request
     await connect(walletName);
   };
 

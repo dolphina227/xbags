@@ -244,7 +244,6 @@ export function BagsFunWalletProvider({ children }: { children: ReactNode }) {
       const w = solanaWallets.find((sw) => sw.adapter.name === walletName);
 
       // ── FIX: DI MOBILE, LANGSUNG SELECT TANPA CEK readyState ──
-      // Wallet Adapter akan handle deep linking + connection request secara otomatis
       if (isMobile()) {
         if (w) {
           select(w.adapter.name);
@@ -279,7 +278,6 @@ export function BagsFunWalletProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      // Desktop installed: connect normal
       select(w.adapter.name);
     },
     [solanaWallets, select]
@@ -444,4 +442,5 @@ export function useWallet() {
   return ctx;
 }
 
+// ── FIX: HANYA EXPORT isValidSolanaAddress (isMobile SUDAH DI-EXPORT DI ATAS) ──
 export { isValidSolanaAddress };
