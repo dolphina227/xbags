@@ -6,12 +6,11 @@ import {
 import { WalletError } from "@solana/wallet-adapter-base";
 import type { WalletAdapterNetwork } from "@solana/wallet-adapter-base";
 
-// ── IMPORT WALLET ADAPTERS (WAJIB UNTUK MOBILE) ──
+// ── IMPORT WALLET ADAPTERS (RESMI & STABIL) ──
 import { PhantomWalletAdapter } from "@solana/wallet-adapter-phantom";
 import { SolflareWalletAdapter } from "@solana/wallet-adapter-solflare";
 import { BackpackWalletAdapter } from "@solana/wallet-adapter-backpack";
-import { SlopeWalletAdapter } from "@solana/wallet-adapter-slope";
-import { LedgerWalletAdapter } from "@solana/wallet-adapter-ledger";
+import { WalletConnectWalletAdapter } from "@solana/wallet-adapter-walletconnect";
 
 import { toast } from "sonner";
 import { getRpcUrl } from "@/lib/solana-utils";
@@ -27,14 +26,20 @@ const SolanaWalletProvider = ({
 }: SolanaWalletProviderProps) => {
   const endpoint = useMemo(() => getRpcUrl(network as any), [network]);
 
-  // ── DAFTAR WALLET YANG DIDUKUNG (FIX: TIDAK LAGI KOSONG) ──
+  // ── DAFTAR WALLET (Mobile deep-linking sudah handle internal) ──
   const wallets = useMemo(
     () => [
-      new PhantomWalletAdapter(),
-      new SolflareWalletAdapter(),
-      new BackpackWalletAdapter(),
-      new SlopeWalletAdapter(),
-      new LedgerWalletAdapter(),
+      new PhantomWalletAdapter(),      // ✅ Support mobile deep-linking
+      new SolflareWalletAdapter(),     // ✅ Support mobile deep-linking
+      new BackpackWalletAdapter(),     // ✅ Support mobile deep-linking
+      // Fallback: WalletConnect untuk iOS Safari / QR scan
+      new WalletConnectWalletAdapter({
+        network: "mainnet-beta",
+        options: {
+          relayUrl: "wss://relay.walletconnect.com",
+          projectId: import.meta.env.VITE_WALLETCONNECT_PROJECT_ID || "your-fallback-id",
+        },
+      }),
     ],
     [network]
   );
@@ -51,7 +56,7 @@ const SolanaWalletProvider = ({
       });
     } else if (message.includes("not found") || message.includes("not installed")) {
       toast.error("Wallet not found", {
-        description: "Please install the wallet extension first.",
+        description: "Please install the wallet extension/app first.",
       });
     } else if (message.includes("Already processing")) {
       // Ignore - duplicate request
@@ -60,7 +65,6 @@ const SolanaWalletProvider = ({
         description: message,
       });
     }
-
     console.warn("[Wallet Error]", error.name, message);
   }, []);
 
