@@ -20,6 +20,7 @@ import NotFound from "./pages/NotFound";
 import ReferralPage from "./pages/ReferralPage";
 import LeaderboardPage from "./pages/LeaderboardPage";
 import TokenAnalyticsPage from "./pages/TokenAnalyticsPage";
+import PresalePage from "./pages/PresalePage";
 import LicensePage from "./pages/LicensePage";
 import CopyrightPage from "./pages/CopyrightPage";
 import PrivacyPolicyPage from "./pages/PrivacyPolicyPage";
@@ -45,6 +46,7 @@ const App = () => (
                 <Route path="/feed" element={<FeedPage />} />
                 <Route path="/market" element={<MarketPage />} />
                 <Route path="/analytics" element={<TokenAnalyticsPage />} />
+                <Route path="/presale" element={<PresalePage />} />
                 <Route path="/notifications" element={<NotificationsPage />} />
                 <Route path="/messages" element={<MessagesPage />} />
                 <Route path="/profile/:username" element={<ProfilePage />} />

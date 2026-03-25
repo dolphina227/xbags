@@ -1,11 +1,12 @@
 import {
-  Home, Bell, User, Settings, MessageSquare, BarChart3, Gift, Trophy, Eye
+  Home, Bell, User, Settings, MessageSquare, BarChart3, Gift, Trophy, Eye, Rocket
 } from "lucide-react";
 
 export const NAV_ITEMS = [
   { title: "Home",          url: "/feed",          icon: Home },
   { title: "Market",        url: "/market",        icon: BarChart3 },
   { title: "Analytics",     url: "/analytics",     icon: Eye },
+  
   { title: "Notifications", url: "/notifications", icon: Bell },
   { title: "Messages",      url: "/messages",      icon: MessageSquare },
   { title: "Referral",      url: "/referral",      icon: Gift },

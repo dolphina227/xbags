@@ -5,6 +5,14 @@ import {
 } from "@solana/wallet-adapter-react";
 import { WalletError } from "@solana/wallet-adapter-base";
 import type { WalletAdapterNetwork } from "@solana/wallet-adapter-base";
+
+// ── IMPORT WALLET ADAPTERS (WAJIB UNTUK MOBILE) ──
+import { PhantomWalletAdapter } from "@solana/wallet-adapter-phantom";
+import { SolflareWalletAdapter } from "@solana/wallet-adapter-solflare";
+import { BackpackWalletAdapter } from "@solana/wallet-adapter-backpack";
+import { SlopeWalletAdapter } from "@solana/wallet-adapter-slope";
+import { LedgerWalletAdapter } from "@solana/wallet-adapter-ledger";
+
 import { toast } from "sonner";
 import { getRpcUrl } from "@/lib/solana-utils";
 
@@ -19,11 +27,20 @@ const SolanaWalletProvider = ({
 }: SolanaWalletProviderProps) => {
   const endpoint = useMemo(() => getRpcUrl(network as any), [network]);
 
-  const wallets = useMemo(() => [], []);
+  // ── DAFTAR WALLET YANG DIDUKUNG (FIX: TIDAK LAGI KOSONG) ──
+  const wallets = useMemo(
+    () => [
+      new PhantomWalletAdapter(),
+      new SolflareWalletAdapter(),
+      new BackpackWalletAdapter(),
+      new SlopeWalletAdapter(),
+      new LedgerWalletAdapter(),
+    ],
+    [network]
+  );
 
   const onError = useCallback((error: WalletError) => {
     const message = error.message || "Wallet error";
-
     if (
       message.includes("User rejected") ||
       message.includes("rejected the request") ||
