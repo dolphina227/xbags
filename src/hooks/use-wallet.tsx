@@ -52,6 +52,13 @@ const BALANCE_KEY = "bagsfun_show_balance";
 const NETWORK_KEY = "bagsfun_network";
 const SOL_PRICE_CACHE_KEY = "bagsfun_sol_price";
 
+// ── DETECT MOBILE ──
+const isMobile = () => {
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+    navigator.userAgent
+  );
+};
+
 export function addressToColor(address: string): string {
   let hash = 0;
   for (let i = 0; i < address.length; i++) {
@@ -118,7 +125,6 @@ export function BagsFunWalletProvider({ children }: { children: ReactNode }) {
       setWasConnecting(true);
       setErrorMessage(null);
     } else if (wasConnecting && !connected) {
-      // Was connecting but didn't connect — user rejected or error occurred
       setWasConnecting(false);
       setErrorMessage("Connection was rejected or failed.");
     } else if (connected) {
@@ -178,7 +184,6 @@ export function BagsFunWalletProvider({ children }: { children: ReactNode }) {
     if (connected && publicKey) {
       refreshBalance();
       fetchSolPrice();
-
       balanceIntervalRef.current = setInterval(() => {
         refreshBalance();
       }, 30_000);
@@ -195,12 +200,13 @@ export function BagsFunWalletProvider({ children }: { children: ReactNode }) {
     }
   }, [connected, publicKey, refreshBalance, fetchSolPrice]);
 
-  // Map Solana wallets to our WalletInfo format
+  // ── FIX: MAP WALLETS DENGAN MOBILE SUPPORT ──
   const wallets: WalletInfo[] = solanaWallets.map((w) => ({
     name: w.adapter.name,
     label: w.adapter.name,
     icon: w.adapter.icon,
-    installed: w.readyState === "Installed",
+    // ── FIX: DI MOBILE, ANGGAP SEMUA WALLET "INSTALLED" AGAR BISA KLIK DEEP LINK ──
+    installed: w.readyState === "Installed" || isMobile(),
     readyState: w.readyState,
   }));
 
@@ -210,32 +216,36 @@ export function BagsFunWalletProvider({ children }: { children: ReactNode }) {
       name: "Phantom",
       label: "Phantom",
       icon: "https://raw.githubusercontent.com/nicka/phantom-deeplink/refs/heads/master/public/phantom-icon.png",
-      installed: false,
+      installed: isMobile(), // Mobile bisa deep link
       readyState: "NotDetected",
     },
     {
       name: "Solflare",
       label: "Solflare",
       icon: "https://solflare.com/favicon.ico",
-      installed: false,
+      installed: isMobile(),
       readyState: "NotDetected",
     },
     {
       name: "Backpack",
       label: "Backpack",
       icon: "https://backpack.app/favicon.ico",
-      installed: false,
+      installed: isMobile(),
       readyState: "NotDetected",
     },
   ];
 
+  // ── FIX: CONNECT FUNCTION DENGAN MOBILE SUPPORT ──
   const connect = useCallback(
     async (walletName: string) => {
       setLastAttemptedWallet(walletName);
       setErrorMessage(null);
 
       const w = solanaWallets.find((sw) => sw.adapter.name === walletName);
-      if (!w || w.readyState !== "Installed") {
+
+      // ── FIX: DI MOBILE, JANGAN CEK "Installed" ──
+      // Mobile browser tidak punya window.solana tapi masih bisa connect via deep link
+      if (!w) {
         const installUrls: Record<string, string> = {
           Phantom: "https://phantom.app/",
           Solflare: "https://solflare.com/",
@@ -253,10 +263,26 @@ export function BagsFunWalletProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      // select() triggers the wallet adapter's connection flow
-      // Errors are handled by the onError callback in SolanaWalletProvider
-      // and by our wasConnecting state tracker above
-      select(w.adapter.name);
+      // ── FIX: SKIP readyState check di mobile ──
+      if (isMobile() || w.readyState === "Installed") {
+        select(w.adapter.name);
+      } else {
+        // Desktop tapi tidak terinstall
+        const installUrls: Record<string, string> = {
+          Phantom: "https://phantom.app/",
+          Solflare: "https://solflare.com/",
+          Backpack: "https://backpack.app/",
+        };
+        const url = installUrls[walletName] || `https://www.google.com/search?q=${walletName}+wallet`;
+        setErrorMessage(`${walletName} is not installed.`);
+        toast.error(`${walletName} not found`, {
+          description: "Please install it from the official website.",
+          action: {
+            label: "Install",
+            onClick: () => window.open(url, "_blank"),
+          },
+        });
+      }
     },
     [solanaWallets, select]
   );
@@ -420,4 +446,4 @@ export function useWallet() {
   return ctx;
 }
 
-export { isValidSolanaAddress };
+export { isValidSolanaAddress, isMobile };

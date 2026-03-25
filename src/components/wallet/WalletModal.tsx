@@ -13,7 +13,6 @@ const INSTALL_URLS: Record<string, string> = {
   Phantom: "https://phantom.app/",
   Solflare: "https://solflare.com/",
   Backpack: "https://backpack.app/",
-  Slope: "https://slope.finance/",
 };
 
 // ── DEEP LINKS UNTUK MOBILE ──
@@ -21,7 +20,6 @@ const DEEP_LINKS: Record<string, string> = {
   Phantom: "phantom://",
   Solflare: "solflare://",
   Backpack: "backpack://",
-  Slope: "slope://",
 };
 
 // ── DETECT MOBILE ──
@@ -56,26 +54,26 @@ const WalletModal = ({ open, onClose }: WalletModalProps) => {
     [onClose]
   );
 
-  // ── UPDATED: HANDLE SELECT DENGAN DEEP LINKING ──
+  // ── FIX: HANDLE SELECT DENGAN DEEP LINKING ──
   const handleSelect = async (walletName: string) => {
     const wallet = wallets.find((w) => w.name === walletName);
     
-    // Jika di mobile dan wallet tidak terinstall, coba deep link
-    if (isMobile() && !wallet?.installed) {
+    // Jika di mobile, coba deep link dulu
+    if (isMobile()) {
       const deepLink = DEEP_LINKS[walletName];
       if (deepLink) {
         // Coba buka wallet app
         window.location.href = deepLink;
         
-        // Fallback: buka halaman install setelah 2 detik
+        // Fallback: buka install page setelah 2.5 detik jika tidak kembali
         setTimeout(() => {
           window.open(INSTALL_URLS[walletName] || "#", "_blank");
-        }, 2000);
+        }, 2500);
         return;
       }
     }
     
-    // Normal connect (desktop atau wallet terinstall)
+    // Normal connect
     await connect(walletName);
   };
 
@@ -121,7 +119,7 @@ const WalletModal = ({ open, onClose }: WalletModalProps) => {
               Connect a Solana wallet to get started with xbags
             </p>
 
-            {/* ── MOBILE INFO ── */}
+            {/* Mobile Info */}
             {isMobile() && (
               <div className="mb-4 p-3 rounded-lg bg-primary/10 border border-primary/20 flex items-start gap-3">
                 <Smartphone className="h-4 w-4 text-primary shrink-0 mt-0.5" />
@@ -130,7 +128,7 @@ const WalletModal = ({ open, onClose }: WalletModalProps) => {
                     Using Mobile Browser?
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    Tap a wallet to open the app, or use in-app browser
+                    Tap a wallet to open the app
                   </p>
                 </div>
               </div>
@@ -163,7 +161,6 @@ const WalletModal = ({ open, onClose }: WalletModalProps) => {
               {wallets.map((wallet) => {
                 const isConnecting = status === "connecting";
                 const isInstalled = wallet.installed;
-                const isWalletConnect = wallet.name.toLowerCase().includes("walletconnect");
 
                 return (
                   <motion.button
@@ -190,22 +187,15 @@ const WalletModal = ({ open, onClose }: WalletModalProps) => {
                       <div className="text-sm font-semibold text-foreground group-hover:text-primary transition-colors">
                         {wallet.label}
                       </div>
-                      {!isInstalled && !isWalletConnect && (
+                      {!isInstalled && (
                         <div className="text-xs text-muted-foreground flex items-center gap-1">
                           <Download className="h-3 w-3" />
-                          Not installed — click to open
-                        </div>
-                      )}
-                      {isWalletConnect && (
-                        <div className="text-xs text-muted-foreground">
-                          Scan QR code with wallet app
+                          Not installed — click to install
                         </div>
                       )}
                     </div>
                     {isInstalled ? (
                       <div className="h-2 w-2 rounded-full bg-success" />
-                    ) : isWalletConnect ? (
-                      <Smartphone className="h-4 w-4 text-muted-foreground" />
                     ) : (
                       <ExternalLink className="h-4 w-4 text-muted-foreground" />
                     )}
