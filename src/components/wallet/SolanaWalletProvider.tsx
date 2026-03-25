@@ -6,11 +6,10 @@ import {
 import { WalletError } from "@solana/wallet-adapter-base";
 import type { WalletAdapterNetwork } from "@solana/wallet-adapter-base";
 
-// ── IMPORT WALLET ADAPTERS (WAJIB UNTUK MOBILE) ──
+// ── IMPORT WALLET ADAPTERS (WAJIB!) ──
 import { PhantomWalletAdapter } from "@solana/wallet-adapter-phantom";
 import { SolflareWalletAdapter } from "@solana/wallet-adapter-solflare";
 import { BackpackWalletAdapter } from "@solana/wallet-adapter-backpack";
-import { WalletConnectWalletAdapter } from "@solana/wallet-adapter-walletconnect";
 
 import { toast } from "sonner";
 import { getRpcUrl } from "@/lib/solana-utils";
@@ -26,20 +25,12 @@ const SolanaWalletProvider = ({
 }: SolanaWalletProviderProps) => {
   const endpoint = useMemo(() => getRpcUrl(network as any), [network]);
 
-  // ── FIX: DAFTARKAN SEMUA WALLET ADAPTERS (SEBELUMNYA KOSONG []) ──
+  // ── FIX: DAFTARKAN WALLET ADAPTERS (SEBELUMNYA KOSONG []) ──
   const wallets = useMemo(
     () => [
-      new PhantomWalletAdapter(),      // ✅ Desktop extension + Mobile deep-link
-      new SolflareWalletAdapter(),     // ✅ Desktop extension + Mobile deep-link
-      new BackpackWalletAdapter(),     // ✅ Desktop extension + Mobile deep-link
-      // WalletConnect fallback untuk mobile browser (QR Code)
-      new WalletConnectWalletAdapter({
-        network: "mainnet-beta",
-        options: {
-          relayUrl: "wss://relay.walletconnect.com",
-          projectId: import.meta.env.VITE_WALLETCONNECT_PROJECT_ID || "your-fallback-id",
-        },
-      }),
+      new PhantomWalletAdapter(),
+      new SolflareWalletAdapter(),
+      new BackpackWalletAdapter(),
     ],
     [network]
   );
@@ -59,13 +50,12 @@ const SolanaWalletProvider = ({
         description: "Please install the wallet extension/app first.",
       });
     } else if (message.includes("Already processing")) {
-      // Ignore - duplicate request
+      // Ignore
     } else {
       toast.error("Wallet error", {
         description: message,
       });
     }
-
     console.warn("[Wallet Error]", error.name, message);
   }, []);
 

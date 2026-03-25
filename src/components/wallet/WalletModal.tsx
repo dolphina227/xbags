@@ -1,7 +1,7 @@
 import { useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, ExternalLink, AlertCircle, RefreshCw, Download, Smartphone } from "lucide-react";
-import { useWallet } from "@/hooks/use-wallet";
+import { useWallet, isMobile } from "@/hooks/use-wallet";
 import { Button } from "@/components/ui/button";
 
 interface WalletModalProps {
@@ -13,20 +13,6 @@ const INSTALL_URLS: Record<string, string> = {
   Phantom: "https://phantom.app/",
   Solflare: "https://solflare.com/",
   Backpack: "https://backpack.app/",
-};
-
-// ── DEEP LINKS UNTUK MOBILE ──
-const DEEP_LINKS: Record<string, string> = {
-  Phantom: "phantom://",
-  Solflare: "solflare://",
-  Backpack: "backpack://",
-};
-
-// ── DETECT MOBILE ──
-const isMobile = () => {
-  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
-    navigator.userAgent
-  );
 };
 
 const WalletModal = ({ open, onClose }: WalletModalProps) => {
@@ -54,26 +40,9 @@ const WalletModal = ({ open, onClose }: WalletModalProps) => {
     [onClose]
   );
 
-  // ── FIX: HANDLE SELECT DENGAN DEEP LINKING ──
+  // ── FIX: HANDLE SELECT - BIAR WALLET ADAPTER YANG HANDLE DEEP LINK ──
   const handleSelect = async (walletName: string) => {
-    const wallet = wallets.find((w) => w.name === walletName);
-    
-    // Jika di mobile, coba deep link dulu
-    if (isMobile()) {
-      const deepLink = DEEP_LINKS[walletName];
-      if (deepLink) {
-        // Coba buka wallet app
-        window.location.href = deepLink;
-        
-        // Fallback: buka install page setelah 2.5 detik jika tidak kembali
-        setTimeout(() => {
-          window.open(INSTALL_URLS[walletName] || "#", "_blank");
-        }, 2500);
-        return;
-      }
-    }
-    
-    // Normal connect
+    // Langsung connect, Wallet Adapter akan handle deep link + connection request
     await connect(walletName);
   };
 
@@ -128,7 +97,7 @@ const WalletModal = ({ open, onClose }: WalletModalProps) => {
                     Using Mobile Browser?
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    Tap a wallet to open the app
+                    Tap a wallet to open the app and connect
                   </p>
                 </div>
               </div>

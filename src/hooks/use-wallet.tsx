@@ -53,7 +53,7 @@ const NETWORK_KEY = "bagsfun_network";
 const SOL_PRICE_CACHE_KEY = "bagsfun_sol_price";
 
 // ── DETECT MOBILE ──
-const isMobile = () => {
+export const isMobile = () => {
   return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
     navigator.userAgent
   );
@@ -119,7 +119,7 @@ export function BagsFunWalletProvider({ children }: { children: ReactNode }) {
   const [wasConnecting, setWasConnecting] = useState(false);
   const balanceIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Track when connecting stops without becoming connected (= error/rejection)
+  // Track when connecting stops without becoming connected
   useEffect(() => {
     if (connecting) {
       setWasConnecting(true);
@@ -205,7 +205,7 @@ export function BagsFunWalletProvider({ children }: { children: ReactNode }) {
     name: w.adapter.name,
     label: w.adapter.name,
     icon: w.adapter.icon,
-    // ── FIX: DI MOBILE, ANGGAP SEMUA WALLET "INSTALLED" AGAR BISA KLIK DEEP LINK ──
+    // ── FIX: DI MOBILE, ANGGAP SEMUA WALLET "INSTALLED" AGAR BISA DIKLIK ──
     installed: w.readyState === "Installed" || isMobile(),
     readyState: w.readyState,
   }));
@@ -216,7 +216,7 @@ export function BagsFunWalletProvider({ children }: { children: ReactNode }) {
       name: "Phantom",
       label: "Phantom",
       icon: "https://raw.githubusercontent.com/nicka/phantom-deeplink/refs/heads/master/public/phantom-icon.png",
-      installed: isMobile(), // Mobile bisa deep link
+      installed: isMobile(),
       readyState: "NotDetected",
     },
     {
@@ -243,9 +243,25 @@ export function BagsFunWalletProvider({ children }: { children: ReactNode }) {
 
       const w = solanaWallets.find((sw) => sw.adapter.name === walletName);
 
-      // ── FIX: DI MOBILE, JANGAN CEK "Installed" ──
-      // Mobile browser tidak punya window.solana tapi masih bisa connect via deep link
-      if (!w) {
+      // ── FIX: DI MOBILE, LANGSUNG SELECT TANPA CEK readyState ──
+      // Wallet Adapter akan handle deep linking + connection request secara otomatis
+      if (isMobile()) {
+        if (w) {
+          select(w.adapter.name);
+        } else {
+          const installUrls: Record<string, string> = {
+            Phantom: "https://phantom.app/",
+            Solflare: "https://solflare.com/",
+            Backpack: "https://backpack.app/",
+          };
+          const url = installUrls[walletName] || `https://www.google.com/search?q=${walletName}+wallet`;
+          window.open(url, "_blank");
+        }
+        return;
+      }
+
+      // Desktop: cek installed seperti biasa
+      if (!w || w.readyState !== "Installed") {
         const installUrls: Record<string, string> = {
           Phantom: "https://phantom.app/",
           Solflare: "https://solflare.com/",
@@ -263,26 +279,8 @@ export function BagsFunWalletProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      // ── FIX: SKIP readyState check di mobile ──
-      if (isMobile() || w.readyState === "Installed") {
-        select(w.adapter.name);
-      } else {
-        // Desktop tapi tidak terinstall
-        const installUrls: Record<string, string> = {
-          Phantom: "https://phantom.app/",
-          Solflare: "https://solflare.com/",
-          Backpack: "https://backpack.app/",
-        };
-        const url = installUrls[walletName] || `https://www.google.com/search?q=${walletName}+wallet`;
-        setErrorMessage(`${walletName} is not installed.`);
-        toast.error(`${walletName} not found`, {
-          description: "Please install it from the official website.",
-          action: {
-            label: "Install",
-            onClick: () => window.open(url, "_blank"),
-          },
-        });
-      }
+      // Desktop installed: connect normal
+      select(w.adapter.name);
     },
     [solanaWallets, select]
   );
@@ -446,4 +444,4 @@ export function useWallet() {
   return ctx;
 }
 
-export { isValidSolanaAddress, isMobile };
+export { isValidSolanaAddress };
