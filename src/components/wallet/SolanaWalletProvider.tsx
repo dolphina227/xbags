@@ -6,7 +6,7 @@ import {
 import { WalletError } from "@solana/wallet-adapter-base";
 import type { WalletAdapterNetwork } from "@solana/wallet-adapter-base";
 
-// ── IMPORT WALLET ADAPTERS (RESMI & STABIL) ──
+// ── IMPORT WALLET ADAPTERS (WAJIB UNTUK MOBILE) ──
 import { PhantomWalletAdapter } from "@solana/wallet-adapter-phantom";
 import { SolflareWalletAdapter } from "@solana/wallet-adapter-solflare";
 import { BackpackWalletAdapter } from "@solana/wallet-adapter-backpack";
@@ -26,13 +26,13 @@ const SolanaWalletProvider = ({
 }: SolanaWalletProviderProps) => {
   const endpoint = useMemo(() => getRpcUrl(network as any), [network]);
 
-  // ── DAFTAR WALLET (Mobile deep-linking sudah handle internal) ──
+  // ── FIX: DAFTARKAN SEMUA WALLET ADAPTERS (SEBELUMNYA KOSONG []) ──
   const wallets = useMemo(
     () => [
-      new PhantomWalletAdapter(),      // ✅ Support mobile deep-linking
-      new SolflareWalletAdapter(),     // ✅ Support mobile deep-linking
-      new BackpackWalletAdapter(),     // ✅ Support mobile deep-linking
-      // Fallback: WalletConnect untuk iOS Safari / QR scan
+      new PhantomWalletAdapter(),      // ✅ Desktop extension + Mobile deep-link
+      new SolflareWalletAdapter(),     // ✅ Desktop extension + Mobile deep-link
+      new BackpackWalletAdapter(),     // ✅ Desktop extension + Mobile deep-link
+      // WalletConnect fallback untuk mobile browser (QR Code)
       new WalletConnectWalletAdapter({
         network: "mainnet-beta",
         options: {
@@ -65,6 +65,7 @@ const SolanaWalletProvider = ({
         description: message,
       });
     }
+
     console.warn("[Wallet Error]", error.name, message);
   }, []);
 

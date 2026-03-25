@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, ExternalLink, AlertCircle, RefreshCw, Download } from "lucide-react";
+import { X, ExternalLink, AlertCircle, RefreshCw, Download, Smartphone } from "lucide-react";
 import { useWallet } from "@/hooks/use-wallet";
 import { Button } from "@/components/ui/button";
 
@@ -13,6 +13,22 @@ const INSTALL_URLS: Record<string, string> = {
   Phantom: "https://phantom.app/",
   Solflare: "https://solflare.com/",
   Backpack: "https://backpack.app/",
+  Slope: "https://slope.finance/",
+};
+
+// ── DEEP LINKS UNTUK MOBILE ──
+const DEEP_LINKS: Record<string, string> = {
+  Phantom: "phantom://",
+  Solflare: "solflare://",
+  Backpack: "backpack://",
+  Slope: "slope://",
+};
+
+// ── DETECT MOBILE ──
+const isMobile = () => {
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+    navigator.userAgent
+  );
 };
 
 const WalletModal = ({ open, onClose }: WalletModalProps) => {
@@ -40,7 +56,26 @@ const WalletModal = ({ open, onClose }: WalletModalProps) => {
     [onClose]
   );
 
+  // ── UPDATED: HANDLE SELECT DENGAN DEEP LINKING ──
   const handleSelect = async (walletName: string) => {
+    const wallet = wallets.find((w) => w.name === walletName);
+    
+    // Jika di mobile dan wallet tidak terinstall, coba deep link
+    if (isMobile() && !wallet?.installed) {
+      const deepLink = DEEP_LINKS[walletName];
+      if (deepLink) {
+        // Coba buka wallet app
+        window.location.href = deepLink;
+        
+        // Fallback: buka halaman install setelah 2 detik
+        setTimeout(() => {
+          window.open(INSTALL_URLS[walletName] || "#", "_blank");
+        }, 2000);
+        return;
+      }
+    }
+    
+    // Normal connect (desktop atau wallet terinstall)
     await connect(walletName);
   };
 
@@ -62,9 +97,6 @@ const WalletModal = ({ open, onClose }: WalletModalProps) => {
           aria-modal="true"
           aria-label="Connect Wallet"
         >
-          {/* Backdrop — fixed dan z-index penuh agar menutupi semua konten */}
-          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm" />
-
           <motion.div
             ref={modalRef}
             initial={{ opacity: 0, scale: 0.95, y: 10 }}
@@ -88,6 +120,21 @@ const WalletModal = ({ open, onClose }: WalletModalProps) => {
             <p className="text-xs text-muted-foreground mb-5">
               Connect a Solana wallet to get started with xbags
             </p>
+
+            {/* ── MOBILE INFO ── */}
+            {isMobile() && (
+              <div className="mb-4 p-3 rounded-lg bg-primary/10 border border-primary/20 flex items-start gap-3">
+                <Smartphone className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs text-foreground font-medium">
+                    Using Mobile Browser?
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Tap a wallet to open the app, or use in-app browser
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* Error state */}
             {status === "error" && errorMessage && (
@@ -116,20 +163,18 @@ const WalletModal = ({ open, onClose }: WalletModalProps) => {
               {wallets.map((wallet) => {
                 const isConnecting = status === "connecting";
                 const isInstalled = wallet.installed;
+                const isWalletConnect = wallet.name.toLowerCase().includes("walletconnect");
+
                 return (
                   <motion.button
                     key={wallet.name}
                     whileHover={{ scale: 1.01 }}
                     whileTap={{ scale: 0.99 }}
-                    onClick={() =>
-                      isInstalled
-                        ? handleSelect(wallet.name)
-                        : window.open(INSTALL_URLS[wallet.name] || "#", "_blank")
-                    }
+                    onClick={() => handleSelect(wallet.name)}
                     disabled={isConnecting}
                     role="option"
                     aria-selected={false}
-                    aria-label={`${isInstalled ? "Connect to" : "Install"} ${wallet.label}`}
+                    aria-label={`${isInstalled ? "Connect to " : "Install "} ${wallet.label}`}
                     className="w-full flex items-center gap-4 p-4 rounded-lg border border-border hover:border-primary/30 hover:bg-muted/50 transition-all disabled:opacity-50 disabled:cursor-not-allowed group"
                   >
                     <img
@@ -139,30 +184,28 @@ const WalletModal = ({ open, onClose }: WalletModalProps) => {
                       onError={(e) => {
                         const el = e.target as HTMLImageElement;
                         el.style.display = "none";
-                        // Show fallback text
-                        const fallback = el.nextElementSibling;
-                        if (fallback) (fallback as HTMLElement).style.display = "flex";
                       }}
                     />
-                    <span
-                      className="h-8 w-8 rounded-lg bg-primary/20 items-center justify-center text-sm font-bold text-primary shrink-0 hidden"
-                      aria-hidden="true"
-                    >
-                      {wallet.label.charAt(0)}
-                    </span>
                     <div className="flex-1 text-left">
                       <div className="text-sm font-semibold text-foreground group-hover:text-primary transition-colors">
                         {wallet.label}
                       </div>
-                      {!isInstalled && (
+                      {!isInstalled && !isWalletConnect && (
                         <div className="text-xs text-muted-foreground flex items-center gap-1">
                           <Download className="h-3 w-3" />
-                          Not installed — click to install
+                          Not installed — click to open
+                        </div>
+                      )}
+                      {isWalletConnect && (
+                        <div className="text-xs text-muted-foreground">
+                          Scan QR code with wallet app
                         </div>
                       )}
                     </div>
                     {isInstalled ? (
                       <div className="h-2 w-2 rounded-full bg-success" />
+                    ) : isWalletConnect ? (
+                      <Smartphone className="h-4 w-4 text-muted-foreground" />
                     ) : (
                       <ExternalLink className="h-4 w-4 text-muted-foreground" />
                     )}
@@ -182,7 +225,9 @@ const WalletModal = ({ open, onClose }: WalletModalProps) => {
                 >
                   <div className="h-10 w-10 border-2 border-primary border-t-transparent rounded-full animate-spin" />
                   <p className="text-sm font-medium text-foreground">Connecting...</p>
-                  <p className="text-xs text-muted-foreground">Approve the request in your wallet</p>
+                  <p className="text-xs text-muted-foreground">
+                    Approve the request in your wallet
+                  </p>
                 </motion.div>
               )}
             </AnimatePresence>
