@@ -72,7 +72,7 @@ const LandingPage = () => {
             marginBottom: "4px",
           }}
         >
-          post. get tipped. trade fast
+         the future of social trading
         </motion.p>
 
         {/* Launch Button - Lebih kecil di mobile */}
