@@ -11,6 +11,7 @@ import AppLayout from "@/components/layout/AppLayout";
 import LandingPage from "./pages/LandingPage";
 import FeedPage from "./pages/FeedPage";
 import MarketPage from "./pages/MarketPage";
+import PerpPage from "./pages/PerpPage";
 import NotificationsPage from "./pages/NotificationsPage";
 import MessagesPage from "./pages/MessagesPage";
 import ProfilePage from "./pages/ProfilePage";
@@ -45,6 +46,7 @@ const App = () => (
               <Route element={<AppLayout />}>
                 <Route path="/feed" element={<FeedPage />} />
                 <Route path="/market" element={<MarketPage />} />
+                <Route path="/perp" element={<PerpPage />} />
                 <Route path="/analytics" element={<TokenAnalyticsPage />} />
                 <Route path="/presale" element={<PresalePage />} />
                 <Route path="/notifications" element={<NotificationsPage />} />

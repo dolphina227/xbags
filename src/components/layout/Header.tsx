@@ -17,12 +17,15 @@ const Header = () => {
   const isAnalytics = location.pathname === "/analytics";
 
   return (
-    <header className="sticky top-0 z-50 flex items-center justify-between px-4 h-14 border-b border-border bg-background/80 backdrop-blur-xl">
+    <header 
+      className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-4 h-16 border-b border-border bg-background/95 backdrop-blur-xl shadow-lg"
+      style={{ willChange: "transform" }}
+    >
       <div className="flex items-center gap-2">
         <img
           src={xbagsLogo}
           alt="xBAGS"
-          className="h-6 cursor-pointer"
+          className="h-8 md:h-9 lg:h-10 w-auto cursor-pointer object-contain"
           onClick={() => navigate("/")}
         />
       </div>

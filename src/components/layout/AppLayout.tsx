@@ -6,13 +6,19 @@ import RightSidebar from "./RightSidebar";
 
 const AppLayout = () => {
   const location = useLocation();
-  // Show right sidebar on feed-related pages (desktop only)
-  const showRightSidebar = ["/feed", "/", "/notifications", "/messages", "/referral", "/leaderboard", "/settings", "/analytics"].includes(location.pathname)
-    || location.pathname.startsWith("/post/")
-    || location.pathname.startsWith("/profile/");
 
-  // Market page needs full width for chart layout
-  const isMarketPage = location.pathname === "/market";
+  // Show right sidebar on feed-related pages (desktop only)
+  const showRightSidebar =
+    (
+      ["/feed", "/", "/notifications", "/messages", "/referral", "/leaderboard", "/settings", "/analytics"].includes(location.pathname)
+      || location.pathname.startsWith("/post/")
+      || location.pathname.startsWith("/profile/")
+    ) && location.pathname !== "/perp";
+
+  // Market & Perp page need full width
+  const isMarketPage =
+    location.pathname === "/market" ||
+    location.pathname === "/perp";
 
   return (
     <div className="dark min-h-screen flex w-full bg-background text-foreground">
@@ -22,7 +28,13 @@ const AppLayout = () => {
           <Header />
         </div>
         <div className="flex-1 flex min-w-0">
-          <main className={`flex-1 min-w-0 pb-24 md:pb-0 w-full ${isMarketPage ? "px-4" : "mx-auto max-w-[640px] px-4"}`}>
+          <main
+            className={`flex-1 min-w-0 pb-24 md:pb-0 w-full ${
+              isMarketPage
+                ? "px-4"
+                : "mx-auto max-w-[640px] px-4"
+            }`}
+          >
             <Outlet />
           </main>
           {showRightSidebar && <RightSidebar />}

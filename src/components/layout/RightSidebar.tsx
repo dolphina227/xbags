@@ -66,7 +66,7 @@ const RightSidebar = () => {
       const [userRes, tokenRes] = await Promise.all([
         supabase
           .from("profiles")
-          .select("id, username, display_name, avatar_url, created_at")
+          .select("id, username, display_name, avatar_url, created_at, followers_count")
           .or(`username.ilike.%${cleanQ}%,display_name.ilike.%${cleanQ}%`)
           .limit(5),
         supabase.functions.invoke("search-tokens", { body: { query: cleanQ } }),
@@ -98,7 +98,7 @@ const RightSidebar = () => {
     setSearchResults([]);
   };
 
-  // ── Who to Follow ──────────────────────
+  // ── TOP CREATORS ──────────────────────
   const [newUsers, setNewUsers] = useState<Profile[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(true);
 
@@ -107,10 +107,10 @@ const RightSidebar = () => {
       try {
         const { data } = await supabase
           .from("profiles")
-          .select("id, username, display_name, avatar_url, created_at")
-          .order("created_at", { ascending: false })
+          .select("id, username, display_name, avatar_url, created_at, followers_count")
+          .order("followers_count", { ascending: false })
           .limit(5);
-        setNewUsers(data || []);
+        setNewUsers((data || []).filter(u => u.username));
       } catch {
         // silent
       } finally {
@@ -377,7 +377,7 @@ const RightSidebar = () => {
           )}
         </div>
 
-        {/* ── Who to Follow ────────────── */}
+        {/* ── TOP CREATORS ────────────── */}
         <div className="rounded-xl bg-card border border-border p-4">
           <div className="flex items-center gap-2 mb-3">
             <UserPlus className="h-4 w-4 text-primary" />
@@ -417,7 +417,7 @@ const RightSidebar = () => {
                       {user.display_name || user.username || "Anonymous"}
                     </div>
                     <div className="text-xs text-muted-foreground truncate">
-                      @{user.username || "user"}
+                      @{user.username || "user"} � {(user as any).followers_count ?? 0} followers
                     </div>
                   </div>
                   <Button
