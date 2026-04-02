@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Heart, MessageCircle, Share2, Eye, MoreHorizontal,
   Trash2, Diamond, Repeat2, Link2, ExternalLink,
-  TrendingUp, TrendingDown, Loader2, X, Copy, Users, Globe,
+  TrendingUp, TrendingDown, Loader2, X, Copy, Users, Globe, Zap,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -17,6 +17,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import CommentSection from "./CommentSection";
 import TipModal from "./TipModal";
+import XBagsPayModal, { type PayMode } from "./XBagsPayModal";
 import QuoteModal from "./QuoteModal";
 import EmbeddedPost from "./EmbeddedPost";
 
@@ -620,7 +621,7 @@ function MentionChip({ username }: { username: string }) {
       .from("profiles")
       .select("avatar_url")
       .eq("username", username)
-      .single()
+      .maybeSingle()
       .then(({ data }) => { if (data?.avatar_url) setAvatar(data.avatar_url); });
   }, [username]);
 
@@ -770,6 +771,8 @@ export default function PostCard({ post, onUpdate, onDelete, index }: PostCardPr
   const [liking, setLiking] = useState(false);
   const [reposting, setReposting] = useState(false);
   const [showTipModal, setShowTipModal] = useState(false);
+  const [showXBagsModal, setShowXBagsModal] = useState(false);
+  const [xbagsPayMode, setXbagsPayMode] = useState<PayMode>("tip");
   const [showQuoteModal, setShowQuoteModal] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
@@ -1024,11 +1027,31 @@ export default function PostCard({ post, onUpdate, onDelete, index }: PostCardPr
                   </AnimatePresence>
                 </motion.button>
 
+                {/* Super Like */}
+                {!isOwn && displayPost.author?.wallet_address && (
+                  <button onClick={() => { setXbagsPayMode("super_like"); setShowXBagsModal(true); }} className="flex items-center gap-1.5 h-8 px-2 rounded-full text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors text-xs">
+                    <Zap className="h-4 w-4" />
+                  </button>
+                )}
+
                 {/* Tip */}
                 {!isOwn && displayPost.author?.wallet_address && (
-                  <button onClick={() => setShowTipModal(true)} className="flex items-center gap-1.5 h-8 px-2 rounded-full text-muted-foreground hover:text-warning hover:bg-warning/10 transition-colors text-xs">
-                    <Diamond className="h-4 w-4" />
-                  </button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button className="flex items-center gap-1.5 h-8 px-2 rounded-full text-muted-foreground hover:text-warning hover:bg-warning/10 transition-colors text-xs">
+                        <Diamond className="h-4 w-4" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="min-w-[160px]">
+                      <DropdownMenuItem onClick={() => setShowTipModal(true)}>
+                        <Diamond className="h-4 w-4 mr-2" />Tip SOL
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={() => { setXbagsPayMode("tip"); setShowXBagsModal(true); }}>
+                        <Zap className="h-4 w-4 mr-2" />Tip xBAGS
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 )}
 
                 {/* Share */}
@@ -1074,6 +1097,19 @@ export default function PostCard({ post, onUpdate, onDelete, index }: PostCardPr
 
       {showTipModal && displayPost.author && (
         <TipModal isOpen={showTipModal} onClose={() => setShowTipModal(false)} recipientWallet={displayPost.author.wallet_address} recipientName={displayName} recipientUsername={displayPost.author.username} />
+      )}
+
+      {showXBagsModal && displayPost.author && (
+        <XBagsPayModal
+          isOpen={showXBagsModal}
+          onClose={() => setShowXBagsModal(false)}
+          mode={xbagsPayMode}
+          recipientWallet={displayPost.author.wallet_address}
+          recipientName={displayName}
+          recipientUsername={displayPost.author.username}
+          postIdForSuperLike={targetPostId}
+          onSuperLiked={() => {}}
+        />
       )}
 
       {showQuoteModal && (

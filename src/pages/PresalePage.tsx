@@ -13,14 +13,14 @@ import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 
 // ─── Presale Config ───────────────────────────────────────────────────────────
-const PRESALE_WALLET = "REPLACE_WITH_YOUR_PRESALE_WALLET_ADDRESS"; // ← ganti dengan wallet presale Anda
-const SOL_PER_XBAGS  = 1 / 8000;          // 1 SOL = 8,000 XBAGS
-const XBAGS_PER_SOL  = 8000;
+const PRESALE_WALLET = "3bEDAbBAmC43xn6CqsCaRZZxyTQTSEufhmQcNXAd4cRD"; // <- ganti wallet treasury
+const SOL_PER_XBAGS  = 1 / 20_000_000;    // 1 SOL = 20M XBAGS
+const XBAGS_PER_SOL  = 20_000_000;
 const MIN_SOL        = 0.1;
-const MAX_SOL        = 5;
-const HARDCAP_SOL    = 5000;               // 40M tokens ÷ 8000 = 5000 SOL (hidden from UI)
-const SOFTCAP_USD    = 5000;               // $5,000 softcap — displayed in USD
-const TOTAL_TOKENS   = 40_000_000;        // 40M presale allocation
+const MAX_SOL        = 1;
+const HARDCAP_SOL    = 15;                 // 15 SOL hardcap
+const SOFTCAP_USD    = 500;                // softcap displayed
+const TOTAL_TOKENS   = 300_000_000;        // 15 SOL x 20M = 300M
 const LAMPORTS       = 1_000_000_000;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -275,12 +275,7 @@ export default function PresalePage() {
           soft={softcapSol}
         />
 
-        <div className="flex items-center justify-between text-xs text-muted-foreground font-mono">
-          <span className="text-yellow-400/80 flex items-center gap-1">
-            <div className="h-1.5 w-0.5 bg-yellow-400/60 inline-block" />
-            Softcap $5,000
-            {isSoftcap && <CheckCircle2 className="h-3 w-3 text-emerald-400 ml-1" />}
-          </span>
+        <div className="flex items-center justify-end text-xs text-muted-foreground font-mono">
           <span className={`font-semibold ${pctSold > 80 ? "text-orange-400" : "text-primary"}`}>
             {pctSold.toFixed(2)}% filled
           </span>
@@ -407,7 +402,7 @@ export default function PresalePage() {
 
                 {/* Quick amounts */}
                 <div className="flex gap-2">
-                  {[0.1, 0.5, 1, 2, 5].map(v => (
+                  {[0.1, 0.5, 1].map(v => (
                     <button
                       key={v}
                       onClick={() => setSolAmount(String(v))}
@@ -527,83 +522,6 @@ export default function PresalePage() {
         </div>
       )}
 
-      {/* Tokenomics Card */}
-      <div className="p-5 rounded-2xl bg-card border border-border space-y-3">
-        <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
-          <TrendingUp className="h-4 w-4 text-primary" />
-          Tokenomics
-        </h2>
-        <div className="space-y-2">
-          {[
-            { label: "Presale",          pct: 40, amount: "40M", color: "bg-blue-400",   desc: "Public sale" },
-            { label: "Rewards & Airdrop",pct: 25, amount: "25M", color: "bg-yellow-400", desc: "Creator rewards, referrals" },
-            { label: "Liquidity Pool",   pct: 20, amount: "20M", color: "bg-emerald-400",desc: "DEX liquidity at TGE" },
-            { label: "Team",             pct: 10, amount: "10M", color: "bg-pink-400",   desc: "12mo lock + 6mo vesting" },
-            { label: "Reserve",          pct:  5, amount:  "5M", color: "bg-slate-400",  desc: "Dev & partnerships" },
-          ].map(row => (
-            <div key={row.label} className="flex items-center gap-3">
-              <div className="flex items-center gap-2 w-36 shrink-0">
-                <div className={`h-2 w-2 rounded-full ${row.color} shrink-0`} />
-                <span className="text-xs text-foreground truncate">{row.label}</span>
-              </div>
-              <div className="flex-1 h-1.5 bg-white/[0.05] rounded-full overflow-hidden">
-                <div className={`h-full ${row.color} rounded-full`} style={{ width: `${row.pct}%` }} />
-              </div>
-              <span className="text-xs font-mono text-muted-foreground w-8 text-right">{row.pct}%</span>
-              <span className="text-xs font-mono text-muted-foreground w-10 text-right">{row.amount}</span>
-            </div>
-          ))}
-        </div>
-        <div className="pt-1 flex items-center gap-2">
-          <Lock className="h-3.5 w-3.5 text-pink-400" />
-          <span className="text-[11px] text-muted-foreground font-mono">
-            Team tokens locked 12 months · Total supply 100,000,000 XBAGS
-          </span>
-        </div>
-      </div>
-
-      {/* Security note */}
-      <div className="flex items-start gap-3 p-4 rounded-xl bg-white/[0.02] border border-white/[0.06]">
-        <Shield className="h-4 w-4 text-primary shrink-0 mt-0.5" />
-        <div className="space-y-1">
-          <p className="text-xs font-semibold text-foreground">How it works</p>
-          <p className="text-[11px] text-muted-foreground leading-relaxed">
-            Send SOL directly to the presale wallet. Your purchase is recorded on-chain and in our database.
-            After presale ends (hardcap reached or end date), tokens are distributed simultaneously to all participants.
-          </p>
-        </div>
-      </div>
-
-      {/* FAQ */}
-      <div className="space-y-2">
-        <h2 className="text-sm font-semibold text-foreground">FAQ</h2>
-        {FAQS.map((faq, i) => (
-          <div key={i} className="rounded-xl bg-card border border-border overflow-hidden">
-            <button
-              onClick={() => setFaqOpen(faqOpen === i ? null : i)}
-              className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-muted/30 transition-colors"
-            >
-              <span className="text-sm font-medium text-foreground">{faq.q}</span>
-              {faqOpen === i
-                ? <ChevronUp className="h-4 w-4 text-muted-foreground shrink-0" />
-                : <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
-              }
-            </button>
-            <AnimatePresence>
-              {faqOpen === i && (
-                <motion.div
-                  initial={{ height: 0 }} animate={{ height: "auto" }} exit={{ height: 0 }}
-                  className="overflow-hidden"
-                >
-                  <p className="px-4 pb-4 text-sm text-muted-foreground leading-relaxed border-t border-border pt-3">
-                    {faq.a}
-                  </p>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-        ))}
-      </div>
 
     </div>
   );
